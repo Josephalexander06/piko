@@ -1,3 +1,4 @@
+import type { SessionSnapshot, WorkflowContext } from '../assistant/session-facts.types'
 import type { InterpretTarget } from '../interpretation/interpretation.generated'
 import type { ScanFieldType } from '../scanner/scanner.types'
 
@@ -15,8 +16,8 @@ export interface FillAuthorization extends FillContext {
   batchId: string; issuedAt: number; expiresAt: number; items: BoundInstruction[]
 }
 export type FillPanelRequest =
-  | { type: 'PIKO_FILL_REVIEW'; tabId: number; scanId: string; items: FillInstruction[] }
-  | { type: 'PIKO_FILL_APPROVE'; reviewId: string }
+  | { type: 'PIKO_FILL_REVIEW'; tabId: number; scanId: string; items: FillInstruction[]; workflow?: WorkflowContext }
+  | { type: 'PIKO_FILL_APPROVE'; reviewId: string; workflow?: WorkflowContext; rememberSelected?: boolean }
   | { type: 'PIKO_FILL_CANCEL'; reviewId: string }
 export type FillContentRequest =
   | { type: 'PIKO_FILL_PREFLIGHT'; context: FillContext; items: BoundInstruction[] }
@@ -24,7 +25,7 @@ export type FillContentRequest =
 export type FillResponse =
   | { ok: true; cancelled: true }
   | { ok: true; reviewId: string; expiresAt: number; preflight: FillPreflight }
-  | { ok: true; result: FillBatchResult }
+  | { ok: true; result: FillBatchResult; memory?: { saved: number; session: SessionSnapshot | null } }
   | { ok: false; error: 'context' | 'expired' | 'invalid' | 'busy' | 'unavailable'; preflight?: FillPreflight }
 
 // Both review and commit grants are intentionally short-lived and memory-only.

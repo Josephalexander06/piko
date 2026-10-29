@@ -210,7 +210,7 @@ test('manual UI requires exact review and explicit approval; edits or deselectio
   const approval=filling.getByRole('region',{name:'Exact batch approval'});
   await expect(approval).toContainText('Synthetic Org');await expect(approval).not.toContainText('Alex Thomas');
   await expect(approval.getByRole('button',{name:'Approve and fill selected fields'})).toBeDisabled();
-  await approval.getByRole('checkbox').check();await approval.getByRole('button',{name:'Approve and fill selected fields'}).click();
+  await approval.getByRole('checkbox',{name:'I approve this exact batch and destination.',exact:true}).check();await approval.getByRole('button',{name:'Approve and fill selected fields'}).click();
   await expect(filling.getByRole('region',{name:'Fill outcomes'})).toContainText('Batch completed');
   expect(await page.locator('#organization').inputValue()).toBe('Synthetic Org');expect(await page.locator('#full-name').inputValue()).toBe('PRIVATE_EXISTING_NAME_901');
   expect(await panel.evaluate(()=>({...localStorage}))).toEqual({});

@@ -21,14 +21,16 @@ const messages: Record<VoiceErrorCode, string> = {
   'request-cancelled': 'Recording discarded.', 'service-unavailable': 'The local assistant service is not running.',
   'session-expired': 'The local session expired. Pair the companion again.', 'invalid-response': 'The companion returned an invalid transcription response.',
 }
-export function VoiceControls({ onAccept }: { onAccept: (text: string) => void }) {
+export function VoiceControls({ onAccept, enabled = true, resetKey, onStageChange }: { onAccept: (text: string) => void; enabled?: boolean; resetKey?: string; onStageChange?: (stage: string) => void }) {
   const connection = useConnectionState()
   const voice = useVoiceState()
   const speaking = voice.output === 'synthesizing' || voice.output === 'playing'
   const [state, setState] = useState(initialRecording)
   const [controller] = useState(() => new RecordingController(setState, uploadRecording))
-  const available = connection.status === 'paired' && connection.capabilities?.transcription === 'ready'
+  const available = enabled && connection.status === 'paired' && connection.capabilities?.transcription === 'ready'
   useEffect(() => () => controller.reset(false), [controller])
+  useEffect(() => { controller.reset() }, [controller, resetKey])
+  useEffect(() => { onStageChange?.(state.stage) }, [state.stage, onStageChange])
   useEffect(() => { if (!available) controller.reset() }, [available, controller])
   return <div className="space-y-1.5">
     {state.stage === 'recording' ? <><RecordingIndicator elapsedMs={state.elapsedMs} /><Button variant="outline" className="min-h-10 w-full" onClick={() => controller.stop()}><Square aria-hidden="true" />Stop recording</Button></>

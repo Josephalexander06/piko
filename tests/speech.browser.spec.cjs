@@ -60,7 +60,7 @@ test.afterEach(async()=>{
       expect(await panel.evaluate(()=>window.__clips.every(a=>a.paused))).toBe(true);
       expect(await panel.evaluate(()=>window.__forbidden)).toEqual([]);
     }
-    if(worker){expect(await worker.evaluate(async()=>Object.keys(await chrome.storage.local.get(null)))).toEqual([]);expect(await worker.evaluate(async()=>Object.keys(await chrome.storage.session.get(null)).every(key=>key==='piko.localService.session.v1'))).toBe(true);}
+    if(worker){expect(await worker.evaluate(async()=>Object.keys(await chrome.storage.local.get(null)))).toEqual([]);expect(await worker.evaluate(async()=>Object.keys(await chrome.storage.session.get(null)).every(key=>['piko.localService.session.v1','piko.assistant.session.v1'].includes(key)))).toBe(true);}
     expect(requests?.every(r=>r.worker&&r.url.startsWith('http://127.0.0.1:8765/v1/')||form&&r.url===form.url())).toBe(true);
   }finally{
     await context?.close();context=undefined;panel=undefined;worker=undefined;form=undefined;

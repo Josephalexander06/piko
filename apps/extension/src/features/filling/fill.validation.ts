@@ -1,3 +1,4 @@
+import { isWorkflowContext } from '../assistant/session-facts.validation'
 import { hasKeys, isOpaqueId, isRecord } from '../scanner/scanner.messages'
 import type { BoundInstruction, FillAuthorization, FillBatchResult, FillContentRequest, FillContext, FillInstruction, FillPanelRequest, FillPreflight, FillValue } from './fill.types'
 import { AUTHORIZATION_TTL_MS } from './fill.types'
@@ -23,8 +24,9 @@ export function isAuthorization(value: unknown): value is FillAuthorization {
 }
 export function isFillPanelRequest(value: unknown): value is FillPanelRequest {
   if (!isRecord(value)) return false
-  if (value.type === 'PIKO_FILL_APPROVE' || value.type === 'PIKO_FILL_CANCEL') return hasKeys(value, ['type', 'reviewId']) && isOpaqueId(value.reviewId)
-  return value.type === 'PIKO_FILL_REVIEW' && hasKeys(value, ['type', 'tabId', 'scanId', 'items']) && Number.isSafeInteger(value.tabId) && Number(value.tabId) >= 0 && isOpaqueId(value.scanId) && isInstructions(value.items)
+  if (value.type === 'PIKO_FILL_CANCEL') return hasKeys(value, ['type', 'reviewId']) && isOpaqueId(value.reviewId)
+  if (value.type === 'PIKO_FILL_APPROVE') return isOpaqueId(value.reviewId) && (hasKeys(value, ['type', 'reviewId']) || hasKeys(value, ['type', 'reviewId', 'workflow', 'rememberSelected']) && isWorkflowContext(value.workflow) && typeof value.rememberSelected === 'boolean')
+  return value.type === 'PIKO_FILL_REVIEW' && (hasKeys(value, ['type', 'tabId', 'scanId', 'items']) || hasKeys(value, ['type', 'tabId', 'scanId', 'items', 'workflow']) && isWorkflowContext(value.workflow)) && Number.isSafeInteger(value.tabId) && Number(value.tabId) >= 0 && isOpaqueId(value.scanId) && isInstructions(value.items)
 }
 export function isFillContentRequest(value: unknown): value is FillContentRequest {
   return isRecord(value) && (value.type === 'PIKO_FILL_PREFLIGHT' ? hasKeys(value, ['type', 'context', 'items']) && isFillContext(value.context) && isInstructions(value.items, true) : value.type === 'PIKO_FILL_COMMIT' && hasKeys(value, ['type', 'authorization']) && isAuthorization(value.authorization))

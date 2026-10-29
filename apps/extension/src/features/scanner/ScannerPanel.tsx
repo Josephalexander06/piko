@@ -3,7 +3,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useScanner } from './use-scanner'
+import { useAssistant } from '../assistant/use-assistant'
+import { workflowError } from '../assistant/workflow-errors'
 import type { ScanField } from './scanner.types'
 import { FillPreview } from '../filling/FillPreview'
 
@@ -20,13 +21,15 @@ function FieldInventory({ field }: { field: ScanField }) {
   </li>
 }
 export function ScannerPanel() {
-  const { state, inspect, clear } = useScanner()
-  const inventory = state.result?.inventory
+  const { state: workflow, controller } = useAssistant()
+  const inventory = workflow.scan?.inventory
+  const state = { stage: workflow.staleReason ? 'stale' : workflow.stage === 'scanning' ? 'loading' : workflow.stage === 'error' && !inventory ? 'error' : !inventory ? 'idle' : inventory.forms.some(form => form.fields.length) ? 'ready' : 'empty', message: workflow.staleReason ? 'This scan or session changed. Inspect again before continuing. Previous approvals cannot be reused.' : workflow.error ? workflowError(workflow.error) : '' }
   const fields = inventory?.forms.flatMap((form) => form.fields) ?? []
   return <section aria-label="Read-only form scanner" className="space-y-4 rounded-xl border border-emerald-950/15 bg-white/60 p-3">
     <div className="flex items-center gap-2"><ListFilter aria-hidden="true" className="size-4 text-emerald-800" /><h2 className="text-sm font-semibold">Inspect a real form</h2><Badge variant="outline" className="ml-auto">Read only</Badge></div>
-    <p className="text-xs leading-5 text-muted-foreground">Click Piko’s toolbar icon on the target tab first. Inspection reads labels, types, options, and constraints. Existing answers are never collected.</p>
-    <Button variant="outline" className="min-h-10 w-full" disabled={state.stage === 'loading'} onClick={() => void inspect()}><Search aria-hidden="true" />{state.stage === 'loading' ? 'Inspecting…' : state.stage === 'idle' ? 'Inspect this page' : 'Inspect again'}</Button>
+    <p className="text-xs leading-5 text-muted-foreground">Inspection starts a temporary conversation. Click Piko’s toolbar icon on the target tab first. Inspection reads labels, types, options, and constraints. Existing answers are never collected.</p>
+    <Button variant="outline" className="min-h-10 w-full" disabled={state.stage === 'loading' || workflow.stage === 'filling'} onClick={() => void controller.scan()}><Search aria-hidden="true" />{state.stage === 'loading' ? 'Inspecting…' : state.stage === 'idle' ? 'Inspect this page' : 'Inspect again'}</Button>
+    {workflow.scan && <p role="status" className="text-xs">Live workflow: {workflow.stage} · Questions → Review → Exact approval → Verified results</p>}
     {state.stage === 'loading' && <div role="status" aria-label="Scanning page" aria-busy="true" className="space-y-2"><p className="text-xs">Reading field metadata…</p><Skeleton className="h-16 w-full motion-reduce:animate-none" /></div>}
     {state.stage === 'idle' && <p className="text-[11px] text-muted-foreground">No page inspected. Scanning begins only when you click.</p>}
     {(state.stage === 'stale' || state.stage === 'error') && <Alert variant={state.stage === 'error' ? 'destructive' : 'default'}><TriangleAlert aria-hidden="true" className="size-4" /><AlertTitle>{state.stage === 'stale' ? 'Scan is stale' : 'Page could not be inspected'}</AlertTitle><AlertDescription className="text-xs leading-5">{state.message}</AlertDescription></Alert>}
@@ -37,8 +40,10 @@ export function ScannerPanel() {
       {inventory.truncated && <p role="alert" className="text-xs text-amber-900">The metadata limit was reached. This is a partial inventory.</p>}
       <div className={state.stage === 'stale' ? 'opacity-60' : ''}>{inventory.forms.map((form) => <section aria-label={form.label} key={form.formId} className="mt-4"><h3 className="border-b pb-2 text-xs font-semibold">{form.label}</h3><ul className="divide-y">{form.fields.map((field) => <FieldInventory key={field.fieldId} field={field} />)}</ul></section>)}</div>
       <p className="text-[11px] leading-5 text-muted-foreground">Top frame and standard light-DOM controls only. Visibility is approximate. Custom widgets, shadow DOM, and iframe contents are not scanned. Inspection makes no changes.</p>
-      {state.result && <FillPreview key={inventory.scanId} scan={state.result} active={state.stage === 'ready'} />}
+      {workflow.scan && <FillPreview state={workflow} controller={controller} />}
     </>}
-    {state.stage !== 'idle' && <Button variant="ghost" className="min-h-9 w-full" onClick={clear}>Clear scan</Button>}
+    {workflow.session && <div aria-label="Temporary session memory" className="space-y-2 border-t pt-3 text-xs"><p>{workflow.session.facts.length} confirmed facts · This origin only · Expires {new Date(workflow.session.expiresAt).toLocaleTimeString()}</p><p>Transcripts, recordings and unapproved proposals stay in memory. Only answers you separately opt to remember are kept for this browser session, for at most 30 minutes.</p>{workflow.session.facts.length > 0 && <details><summary className="cursor-pointer">Remembered answers for this session</summary><ul className="mt-2 space-y-1">{workflow.session.facts.map(fact => <li key={fact.factId}>{fact.key.replace(/_/g, ' ')}: {fact.value}</li>)}</ul></details>}</div>}
+    <Button variant="ghost" className="min-h-9 w-full" disabled={workflow.stage === 'filling'} onClick={() => void controller.clearSession()}>Clear session</Button>
+    {state.stage !== 'idle' && <Button variant="ghost" className="min-h-9 w-full" disabled={workflow.stage === 'filling'} onClick={() => controller.clearScan()}>Clear scan</Button>}
   </section>
 }

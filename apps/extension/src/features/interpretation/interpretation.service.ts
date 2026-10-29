@@ -1,9 +1,10 @@
+import type { WorkflowContext } from '../assistant/session-facts.types'
 import { hasKeys, isRecord, makeId } from '../scanner/scanner.messages'
 import { InterpretationError, interpretationErrors, isInterpretResponse, type InterpretMessage } from './interpretation.validation'
 import type { InterpretRequest, InterpretResponse } from './interpretation.generated'
 
-export async function interpretAnswers(payload: InterpretRequest, tabId: number, signal: AbortSignal): Promise<InterpretResponse> {
-  const request: InterpretMessage = { type: 'PIKO_INTERPRET', requestId: makeId('request'), tabId, payload }
+export async function interpretAnswers(payload: InterpretRequest, tabId: number, signal: AbortSignal, context?: WorkflowContext & { requestId: string }): Promise<InterpretResponse> {
+  const request: InterpretMessage = { type: 'PIKO_INTERPRET', requestId: context?.requestId ?? makeId('request'), tabId, payload, ...(context ? { workflow: { sessionId: context.sessionId, sessionVersion: context.sessionVersion, revision: context.revision } } : {}) }
   const cancel = () => { void chrome.runtime.sendMessage({ type: 'PIKO_INTERPRET_CANCEL', requestId: request.requestId }).catch(() => {}) }
   if (signal.aborted) throw new InterpretationError('request-cancelled')
   signal.addEventListener('abort', cancel, { once: true })

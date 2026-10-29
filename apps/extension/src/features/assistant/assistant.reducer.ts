@@ -141,3 +141,7 @@ export function assistantReducer(state: AssistantState, action: AssistantAction)
       return { ...createInitialState(), stage: 'error', errorMessage: action.message }
   }
 }
+
+// The synthetic demo above has no authority over live pages. This is the sole
+// reducer used by the active-page conversation orchestrator.
+export { workflowReducer, initialWorkflow } from './workflow.reducer'

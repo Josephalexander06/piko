@@ -16,7 +16,7 @@ function loadTypeScript(filename) {
     fileName: filename,
   });
   const localRequire = (specifier) => {
-    assert.ok(specifier.startsWith('./'), 'State modules must remain browser independent');
+    assert.ok(specifier.startsWith('.'), 'State modules must use local source-only imports');
     return loadTypeScript(path.resolve(path.dirname(filename), `${specifier}.ts`));
   };
   new Function('exports', 'require', 'module', outputText)(loaded.exports, localRequire, loaded);
