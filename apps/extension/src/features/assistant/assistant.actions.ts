@@ -8,6 +8,7 @@ export type AssistantAction =
   | { type: 'SET_ANSWER_FIELD'; fieldId: string }
   | { type: 'SET_DRAFT_ANSWER'; value: string }
   | { type: 'ADD_TEXT_ANSWER' }
+  | { type: 'ACCEPT_TRANSCRIPT'; text: string }
   | { type: 'UPDATE_PROPOSAL'; fieldId: string; value: ProposedValue['value'] }
   | { type: 'TOGGLE_PROPOSAL'; fieldId: string }
   | { type: 'OPEN_REVIEW' }

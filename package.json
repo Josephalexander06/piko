@@ -12,7 +12,9 @@
     "test:skeleton": "node tests/extension.test.cjs",
     "test:browser": "playwright test",
     "test:ui": "node tests/assistant-reducer.test.cjs",
-    "test": "npm run test:contracts && npm run test:skeleton && npm run test:ui && npm run test:scanner && npm run test:filling",
+    "test": "npm run test:contracts && npm run test:skeleton && npm run test:ui && npm run test:scanner && npm run test:filling && npm run test:connection && npm run test:voice",
+    "test:voice": "node --test tests/voice.test.cjs",
+    "test:connection": "node --test tests/connection.test.cjs",
     "test:filling": "node --test tests/filling.test.cjs",
     "test:scanner": "node tests/scanner.test.cjs"
   },

@@ -1,5 +1,9 @@
 # Step 3 development setup and verification
 
+Historical Step 3 baseline: Step 7 supersedes the health-only service, permissions,
+and placeholder runtime status below. Use [the current connection guide](08-local-service-connection.md)
+for pairing, authentication, the protocol, and current verification commands.
+
 This document records the Step 3 foundation. The extension now has the
 [Step 4 synthetic UI workflow](05-extension-ui.md); the service, permissions,
 build paths, and installation commands below still apply. References to the

@@ -1,0 +1,10 @@
+{
+  "WHISPER_CPP_CLI": "C:/path/to/whisper-cli.exe",
+  "WHISPER_MODEL_PATH": "C:/path/to/ggml-base.en.bin",
+  "WHISPER_LANGUAGE": "en",
+  "FFMPEG_PATH": "C:/path/to/ffmpeg.exe",
+  "FFPROBE_PATH": "C:/path/to/ffprobe.exe",
+  "WHISPER_TIMEOUT_SECONDS": 45,
+  "MAX_AUDIO_BYTES": 8388608,
+  "MAX_AUDIO_DURATION_SECONDS": 20
+}
