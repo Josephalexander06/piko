@@ -14,6 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/local-service
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock
 from app.main import create_app
+from app.services.piper_service import PiperService, PiperConfig
+
+def no_speech():
+    return PiperService(PiperConfig(voice_path=Path(__file__).parent / "fixtures/missing-voice.onnx"))
+
 from app.auth import SESSION_TTL
 from app.voice_config import VoiceConfig
 
@@ -32,7 +37,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.now = 1000.0
         self.announcements = []
-        self.app = create_app(lambda: self.now, lambda: 1_800_000_000 + self.now, self.announcements.append, voice_config=VoiceConfig())
+        self.app = create_app(lambda: self.now, lambda: 1_800_000_000 + self.now, self.announcements.append, voice_config=VoiceConfig(), piper_service=no_speech())
         self.lifespan = self.app.router.lifespan_context(self.app)
         await self.lifespan.__aenter__()
         self.addAsyncCleanup(self.lifespan.__aexit__, None, None, None)
@@ -63,7 +68,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(self.code, repr(vars(self.app.state.pairing)))
         headers = {"Authorization": f"Bearer {token}"}
         self.assertEqual((await self.client.get("/v1/ping", headers=headers)).json(), {"protocol_version": 1, "status": "ok"})
-        self.assertEqual((await self.client.get("/v1/capabilities", headers=headers)).json(), {"protocol_version": 1, "inference": "unavailable", "transcription": "unavailable", "speech_synthesis": "not_integrated"})
+        self.assertEqual((await self.client.get("/v1/capabilities", headers=headers)).json(), {"protocol_version": 1, "inference": "unavailable", "transcription": "unavailable", "speech_synthesis": "unavailable", "speech_synthesis_detail": "speech-voice-missing"})
 
     async def test_invalid_code_does_not_create_session(self):
         response = await self.client.post("/v1/pair", json={"protocol_version": 1, "code": "0" * 16})
@@ -145,7 +150,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_restart_invalidates_previous_code_and_token(self):
         token = await self.pair()
-        restarted = create_app(announce=lambda _line: None)
+        restarted = create_app(announce=lambda _line: None, piper_service=no_speech())
         async with restarted.router.lifespan_context(restarted):
             async with AsyncClient(transport=ASGITransport(app=restarted), base_url="http://127.0.0.1:8765", headers={"Origin": ORIGIN}) as client:
                 self.assertEqual((await client.get("/v1/ping", headers={"Authorization": f"Bearer {token}"})).status_code, 401)
@@ -195,13 +200,13 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.app.state.pairing.session)
 
     async def test_only_intended_service_routes_and_no_remote_documentation(self):
-        self.assertEqual(set(self.app.openapi()["paths"]), {"/v1/health", "/v1/pair", "/v1/ping", "/v1/capabilities", "/v1/session", "/v1/transcribe", "/v1/interpret"})
-        for route in ("/interpret", "/api/v1/interpret", "/transcribe", "/synthesize", "/v1/synthesize", "/forms", "/docs", "/redoc", "/openapi.json"):
+        self.assertEqual(set(self.app.openapi()["paths"]), {"/v1/health", "/v1/pair", "/v1/ping", "/v1/capabilities", "/v1/session", "/v1/transcribe", "/v1/interpret", "/v1/synthesize"})
+        for route in ("/interpret", "/api/v1/interpret", "/transcribe", "/synthesize", "/forms", "/docs", "/redoc", "/openapi.json"):
             self.assertEqual((await self.client.get(route)).status_code, 404)
 
     async def test_code_printed_only_once_and_requests_do_not_log_secrets(self):
         stream = io.StringIO()
-        standalone = create_app()
+        standalone = create_app(piper_service=no_speech())
         with redirect_stdout(stream), patch("logging.Logger._log") as log:
             async with standalone.router.lifespan_context(standalone):
                 printed = stream.getvalue()

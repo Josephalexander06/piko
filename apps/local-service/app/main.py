@@ -1,4 +1,4 @@
-"""Authenticated loopback companion with bounded local voice transcription."""
+"""Authenticated loopback companion with bounded local inference and speech."""
 
 import time
 import asyncio
@@ -6,7 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Annotated, Callable, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,6 +24,9 @@ from .services.ollama_client import OllamaClient, InterpretationError
 from .services.interpretation_service import InterpretationService
 from .schemas.interpret import InterpretRequest, InterpretResponse
 from .api.interpret import interpret_request
+from .services.piper_service import PiperService, SpeechError
+from .schemas.synthesize import SynthesizeRequest
+from .api.synthesize import synthesize_request
 
 
 class StrictModel(BaseModel):
@@ -53,7 +56,8 @@ class CapabilitiesResponse(StrictModel):
     protocol_version: Literal[1] = 1
     inference: Literal["ready", "unavailable"]
     transcription: Literal["ready", "unavailable"]
-    speech_synthesis: Literal["not_integrated"] = "not_integrated"
+    speech_synthesis: Literal["ready", "unavailable"]
+    speech_synthesis_detail: Literal['speech-configuration-invalid', 'speech-voice-missing', 'speech-voice-invalid', 'speech-unavailable'] | None = None
 
 
 class PingResponse(StrictModel):
@@ -70,7 +74,7 @@ def authenticate(request: Request) -> Session:
     return request.app.state.pairing.authenticate(request.headers.get("authorization", ""), request.state.extension_origin)
 
 
-def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable[[], float] = time.time, announce: Callable[[str], None] | None = None, voice_config: VoiceConfig | None = None, transcriber: Transcriber | None = None, ollama_client: OllamaClient | None = None) -> FastAPI:
+def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable[[], float] = time.time, announce: Callable[[str], None] | None = None, voice_config: VoiceConfig | None = None, transcriber: Transcriber | None = None, ollama_client: OllamaClient | None = None, piper_service: PiperService | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         manager = PairingManager(clock, wall_clock)
@@ -78,22 +82,27 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
         application.state.transcriber = transcriber or Transcriber(voice_config if voice_config is not None else VoiceConfig.load())
         application.state.ollama = ollama_client or OllamaClient()
         application.state.interpreter = InterpretationService(application.state.ollama)
-        if not application.state.transcriber.config.configured:
-            logging.getLogger("piko.service").warning("Local speech recognition is unavailable; configure the local executables and model.")
-        code = manager.start()
-        # The sole secret output is printed once to the startup terminal, never
-        # through a logger. Request/error handlers never echo request content.
-        line = f"Piko pairing code (valid for 5 minutes): {code}"
-        if announce is None:
-            print(line, flush=True)
-        else:
-            announce(line)
-        del code, line
+        application.state.speech = piper_service or PiperService()
         try:
+            await application.state.speech.start()
+            if not application.state.transcriber.config.configured:
+                logging.getLogger("piko.service").warning("Local speech recognition is unavailable; configure the local executables and model.")
+            code = manager.start()
+            # The sole secret output is printed once to the startup terminal, never
+            # through a logger. Request/error handlers never echo request content.
+            line = f"Piko pairing code (valid for 5 minutes): {code}"
+            if announce is None:
+                print(line, flush=True)
+            else:
+                announce(line)
+            del code, line
             yield
         finally:
             manager.clear()
-            await application.state.ollama.close()
+            try:
+                await application.state.speech.close()
+            finally:
+                await application.state.ollama.close()
 
     application = FastAPI(title="Local Voice Form Assistant Service", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     application.add_middleware(CORSMiddleware, allow_origin_regex=f"^{ORIGIN_PATTERN}$", allow_methods=["GET", "POST", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-Piko-Extension-Origin"], allow_credentials=False, max_age=60)
@@ -120,6 +129,10 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
     async def interpretation_error(_request: Request, error: InterpretationError):
         return JSONResponse({"error": error.code}, status_code=error.status)
 
+    @application.exception_handler(SpeechError)
+    async def speech_error(_request: Request, error: SpeechError):
+        return JSONResponse({"error": error.code}, status_code=error.status)
+
     @application.get("/v1/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         return HealthResponse()
@@ -133,11 +146,16 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
 
     @application.get("/v1/capabilities", response_model=CapabilitiesResponse)
     async def capabilities(request: Request, _session: Annotated[Session, Depends(authenticate)]) -> CapabilitiesResponse:
-        return CapabilitiesResponse(inference="ready" if await request.app.state.ollama.available() else "unavailable", transcription="ready" if request.app.state.transcriber.config.configured else "unavailable")
+        speech = request.app.state.speech
+        return CapabilitiesResponse(speech_synthesis="ready" if speech.ready else "unavailable", speech_synthesis_detail=None if speech.ready else speech.reason or 'speech-unavailable', inference="ready" if await request.app.state.ollama.available() else "unavailable", transcription="ready" if request.app.state.transcriber.config.configured else "unavailable")
 
     @application.post("/v1/interpret", response_model=InterpretResponse)
     async def interpret(payload: InterpretRequest, request: Request, _session: Annotated[Session, Depends(authenticate)]) -> InterpretResponse:
         return await interpret_request(payload, request, authenticate)
+
+    @application.post("/v1/synthesize")
+    async def synthesize(payload: SynthesizeRequest, request: Request, _session: Annotated[Session, Depends(authenticate)]) -> Response:
+        return await synthesize_request(payload, request, authenticate)
 
     @application.post("/v1/transcribe", response_model=Transcript)
     async def transcribe_audio(request: Request, _session: Annotated[Session, Depends(authenticate)]) -> Transcript:

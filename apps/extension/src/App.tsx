@@ -1,3 +1,6 @@
+import { sessionAction } from '@/features/assistant/session-facts.service'
+import { voiceSession } from '@/features/voice-output/voice-session'
+import { VoiceOutputControls } from '@/features/voice-output/VoiceOutputControls'
 import { useEffect, useReducer, useRef } from 'react'
 import { ArrowLeft, ArrowRight, FlaskConical, RotateCcw, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -16,7 +19,7 @@ import type { AssistantStage } from '@/features/assistant/assistant.types'
 import { ScannerPanel } from '@/features/scanner/ScannerPanel'
 
 const screenCopy: Record<AssistantStage, { title: string; status: string; description: string }> = {
-  idle: { title: 'Local Voice Form Assistant', status: 'Ready to demonstrate the workflow', description: 'Prepare privately. Review your answers. Stay in control.' },
+  idle: { title: 'Local Voice Form Assistant', status: 'Ready to inspect a form', description: 'Inspect a page, prepare answers, and review exactly what you want to fill.' },
   'inspecting-demo': { title: 'Preparing the demo.', status: 'Inspecting synthetic form', description: 'Loading a built-in example. Your current webpage is untouched.' },
   ready: { title: 'A form to practice with.', status: 'Synthetic form ready', description: 'Five sample fields, ready for a private conversation.' },
   conversation: { title: 'Let’s prepare your answers.', status: 'Preparing proposed answers', description: 'Use the sample answer or type fictional details for one field.' },
@@ -44,7 +47,8 @@ export default function App() {
 
   return <AppShell>
     <RuntimeStatus />
-    <WorkflowProgress stage={state.stage} />
+    <VoiceOutputControls />
+    {state.stage !== 'idle' && <WorkflowProgress stage={state.stage} />}
     <section aria-labelledby="screen-title" className="space-y-2">
       <p role="status" className="text-[11px] font-medium uppercase tracking-wider text-emerald-800">{copy.status}</p>
       <h1 ref={headingRef} tabIndex={-1} id="screen-title" className="text-2xl font-semibold leading-tight tracking-tight outline-none">{copy.title}</h1>
@@ -52,6 +56,7 @@ export default function App() {
     </section>
 
     {state.stage === 'idle' && <>
+      <ScannerPanel />
       <Card className="bg-white/90">
         <CardHeader className="gap-3"><ShieldCheck aria-hidden="true" className="size-7 text-emerald-800" /><CardTitle><h2>Your answers. Your approval.</h2></CardTitle></CardHeader>
         <CardContent className="space-y-5">
@@ -60,7 +65,6 @@ export default function App() {
           <p className="text-[11px] leading-5 text-muted-foreground">No demo loaded. This action uses a built-in fixture and does not inspect your current page.</p>
         </CardContent>
       </Card>
-      <ScannerPanel />
       <details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-2">Demo scenarios</summary><Button variant="ghost" className="mt-1" onClick={() => dispatch({ type: 'SET_ERROR', message: 'This is a simulated preparation error. Reset the demo to try again. No website was accessed.' })}><TriangleAlert aria-hidden="true" />Show demo error</Button></details>
     </>}
 
@@ -96,6 +100,6 @@ export default function App() {
     </>}
 
     {state.stage === 'error' && <Alert variant="destructive"><TriangleAlert aria-hidden="true" className="size-4" /><AlertTitle>Simulated demo error</AlertTitle><AlertDescription>{state.errorMessage}</AlertDescription></Alert>}
-    {state.stage !== 'idle' && <Button variant="ghost" className="min-h-10 w-full" onClick={() => dispatch({ type: 'RESET_SESSION' })}><RotateCcw aria-hidden="true" />Reset session</Button>}
+    {state.stage !== 'idle' && <Button variant="ghost" className="min-h-10 w-full" onClick={() => { voiceSession.reset(); void sessionAction({ type: 'PIKO_SESSION_CLEAR', sessionId: null }).then(() => dispatch({ type: 'RESET_SESSION' })).catch(() => dispatch({ type: 'SET_ERROR', message: 'Temporary session storage could not be cleared. Reload the extension and use Clear session before continuing.' })) }}><RotateCcw aria-hidden="true" />Reset session</Button>}
   </AppShell>
 }

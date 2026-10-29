@@ -1,3 +1,7 @@
+import { SessionFactsStore } from '../features/assistant/session-facts.store'
+import { isSessionRequest } from '../features/assistant/session-facts.validation'
+import { relevantFacts } from '../features/assistant/conversation-selectors'
+import type { SessionRequest, SessionReply } from '../features/assistant/session-facts.types'
 import scannerFile from '../content/form-scanner?script&iife'
 import { isContentStale, isInspectRequest, isRecord, isStopRequest, makeId } from '../features/scanner/scanner.messages'
 import { isScanInventory } from '../features/scanner/scanner.validation'
@@ -9,13 +13,23 @@ import { ConnectionManager } from './connection-manager'
 import { isConnectionRequest } from '../features/local-service/connection.validation'
 import { AudioTransfer } from './audio-transfer'
 import { VOICE_PORT } from '../features/voice-input/transcription.types'
+import { SPEECH_PORT } from '../features/voice-output/speech.types'
+import { SpeechTransfer } from './speech-transfer'
 import { eligibleMetadata, InterpretationError, isInterpretMessage, type InterpretMessage, type InterpretReply } from '../features/interpretation/interpretation.validation'
 import { hasKeys, isOpaqueId } from '../features/scanner/scanner.messages'
 
 const connection = new ConnectionManager()
 let activeAudio: AudioTransfer | null = null
+let activeSpeech: SpeechTransfer | null = null
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== VOICE_PORT || !fromPanel(port.sender ?? {}) || activeAudio) { port.disconnect(); return }
+  if (port.name === SPEECH_PORT && fromPanel(port.sender ?? {}) && !activeSpeech && !activeAudio) {
+    const transfer = new SpeechTransfer(reply => { try { port.postMessage(reply) } catch { transfer.dispose() } }, (text, signal) => connection.synthesizeSpeech(text, signal), () => { if (activeSpeech === transfer) activeSpeech = null }, () => { try { port.disconnect() } catch { /* Already closed. */ } })
+    activeSpeech = transfer
+    port.onMessage.addListener((message: unknown) => { void transfer.receive(message) })
+    port.onDisconnect.addListener(() => transfer.dispose())
+    return
+  }
+  if (port.name !== VOICE_PORT || !fromPanel(port.sender ?? {}) || activeAudio || activeSpeech) { port.disconnect(); return }
   const transfer = new AudioTransfer((reply) => { try { port.postMessage(reply) } catch { transfer.dispose() } }, (audio, signal) => connection.transcribeAudio(audio, signal), () => { if (activeAudio === transfer) activeAudio = null })
   activeAudio = transfer
   port.onMessage.addListener((message: unknown) => { void transfer.receive(message) })
@@ -32,7 +46,15 @@ chrome.action.onClicked.addListener((tab) => {
 })
 type Session = FillSession
 const sessions = new Map<number, Session>()
-const approvals = new ApprovalCoordinator(sessions)
+const facts = new SessionFactsStore(Date.now, () => {
+  for (const tabId of [...sessions.keys()]) invalidate(tabId, 'changed')
+  void chrome.runtime.sendMessage({ type: 'PIKO_SESSION_CLEARED', sessionId: null }).catch(() => {})
+})
+const approvals = new ApprovalCoordinator(sessions, Date.now, { verify: async (context, origin) => Boolean(await facts.matches(context, origin)), remember: async (...args) => {
+  const result = await facts.remember(...args)
+  if (result.saved) void chrome.runtime.sendMessage({ type: 'PIKO_SESSION_CHANGED', sessionId: result.session!.sessionId, version: result.session!.version }).catch(() => {})
+  return result
+} })
 const pending = new Map<number, string>()
 const interpreting = new Map<string, { tabId: number; controller: AbortController }>()
 
@@ -40,11 +62,16 @@ async function interpret(message: InterpretMessage): Promise<InterpretReply> {
   const controller = new AbortController()
   const session = sessions.get(message.tabId)
   try {
-    if (!session || session.scanId !== message.payload.scanId || message.payload.knownFacts.length ||
+    if (!session || session.scanId !== message.payload.scanId || !message.workflow && message.payload.knownFacts.length ||
         JSON.stringify(message.payload.fields) !== JSON.stringify(eligibleMetadata(session.inventory.forms.flatMap(form => form.fields)))) throw new InterpretationError('stale-scan')
+    if (message.workflow) {
+      const stored = await facts.matches(message.workflow, session.inventory.origin)
+      if (!stored || JSON.stringify(message.payload.knownFacts) !== JSON.stringify(relevantFacts(session.inventory.forms.flatMap(form => form.fields), stored))) throw new InterpretationError('session-expired')
+    }
     if (interpreting.has(message.requestId)) throw new InterpretationError('interpretation-busy')
     interpreting.set(message.requestId, { tabId: message.tabId, controller })
     const current = async () => {
+      if (message.workflow && !await facts.matches(message.workflow, session.inventory.origin)) throw new InterpretationError('session-expired')
       if (controller.signal.aborted || sessions.get(message.tabId) !== session) throw new InterpretationError('stale-scan')
       const state: unknown = await chrome.tabs.sendMessage(message.tabId, { type: 'PIKO_SCAN_CURRENT', scanId: session.scanId, documentId: session.documentId }, { documentId: session.chromeDocumentId })
       const tab = await chrome.tabs.get(message.tabId)
@@ -147,7 +174,36 @@ async function inspect(request: InspectRequest): Promise<InspectResponse> {
     return { ok: false, requestId: request.requestId, error }
   }
 }
+async function sessionRequest(message: SessionRequest): Promise<SessionReply> {
+  try {
+    if (message.type === 'PIKO_SESSION_STATUS') return { ok: true, requestId: message.requestId, session: await facts.status() }
+    if (message.type === 'PIKO_SESSION_CLEAR') {
+      if (!await facts.clear(message.sessionId)) return { ok: false, requestId: message.requestId, error: 'session-expired' }
+      for (const tabId of [...sessions.keys()]) invalidate(tabId, 'changed')
+      for (const request of interpreting.values()) request.controller.abort()
+      activeSpeech?.dispose(); activeAudio?.dispose()
+      void chrome.runtime.sendMessage({ type: 'PIKO_SESSION_CLEARED', sessionId: message.sessionId }).catch(() => {})
+      return { ok: true, requestId: message.requestId, session: null }
+    }
+    const live = sessions.get(message.tabId)
+    if (!live || live.scanId !== message.scanId) return { ok: false, requestId: message.requestId, error: 'stale-scan' }
+    const proof: unknown = await chrome.tabs.sendMessage(message.tabId, { type: 'PIKO_SCAN_CURRENT', scanId: live.scanId, documentId: live.documentId }, { documentId: live.chromeDocumentId })
+    if (sessions.get(message.tabId) !== live || !isRecord(proof) || proof.current !== true) return { ok: false, requestId: message.requestId, error: 'stale-scan' }
+    const previous = await facts.status()
+    const session = await facts.ensure(live.inventory.origin)
+    if (previous && previous.sessionId !== session.sessionId) {
+      for (const tabId of [...sessions.keys()]) if (tabId !== message.tabId) invalidate(tabId, 'changed')
+      void chrome.runtime.sendMessage({ type: 'PIKO_SESSION_CLEARED', sessionId: previous.sessionId }).catch(() => {})
+    }
+    return { ok: true, requestId: message.requestId, session }
+  } catch { return { ok: false, requestId: message.requestId, error: 'session-storage-unavailable' } }
+}
+
 chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
+  if (isSessionRequest(message) && fromPanel(sender)) {
+    void sessionRequest(message).then(respond)
+    return true
+  }
   if (fromPanel(sender) && isRecord(message) && message.type === 'PIKO_INTERPRET_CANCEL' && hasKeys(message, ['type', 'requestId']) && isOpaqueId(message.requestId)) {
     interpreting.get(message.requestId)?.controller.abort()
     respond({ cancelled: true })
@@ -158,6 +214,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
     return true
   }
   if (isConnectionRequest(message) && fromPanel(sender)) {
+    if (message.type === 'PIKO_SERVICE_DISCONNECT') activeSpeech?.dispose()
     void connection.handle(message).then(respond)
     return true
   }

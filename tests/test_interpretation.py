@@ -14,6 +14,11 @@ from pydantic import ValidationError
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'apps/local-service'))
 from app.main import create_app
+from app.services.piper_service import PiperService, PiperConfig
+
+def no_speech():
+    return PiperService(PiperConfig(voice_path=Path(__file__).parent / "fixtures/missing-voice.onnx"))
+
 from app.schemas.interpret import InterpretRequest, InterpretResponse
 from app.services.ollama_client import OllamaClient, OllamaConfig, InterpretationError
 from app.services.interpretation_service import InterpretationService, output_schema
@@ -235,7 +240,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
 class EndpointTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.fake=FakeModel(json.dumps(proposal(CASES[0])))
-        self.app=create_app(announce=lambda _line:None,ollama_client=self.fake)
+        self.app=create_app(announce=lambda _line:None,ollama_client=self.fake,piper_service=no_speech())
         self.lifespan=self.app.router.lifespan_context(self.app); await self.lifespan.__aenter__()
         code=self.app.state.pairing.start()
         self.http=httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app,client=('127.0.0.1',1)),base_url='http://127.0.0.1:8765',headers={'Origin':ORIGIN})

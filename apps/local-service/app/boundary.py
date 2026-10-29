@@ -22,7 +22,7 @@ class RequestBoundary:
 
         async def safe_send(message):
             if message["type"] == "http.response.start":
-                message["headers"] = [*message.get("headers", []), (b"cache-control", b"no-store"), (b"x-content-type-options", b"nosniff")]
+                message["headers"] = [*(header for header in message.get("headers", []) if header[0] not in (b"cache-control", b"x-content-type-options")), (b"cache-control", b"no-store"), (b"x-content-type-options", b"nosniff")]
             await send(message)
 
         async def reject(status: int, error: str):
@@ -92,8 +92,9 @@ class RequestBoundary:
             await self.app(scope, audio_receive, safe_send)
             return
         interpretation = scope["path"] == "/v1/interpret" and scope["method"] == "POST"
-        maximum = 131072 if interpretation else MAX_BODY_BYTES
-        if interpretation:
+        synthesis = scope["path"] == "/v1/synthesize" and scope["method"] == "POST"
+        maximum = 131072 if interpretation else 8192 if synthesis else MAX_BODY_BYTES
+        if interpretation or synthesis:
             try:
                 scope["app"].state.pairing.authenticate(headers.get(b"authorization", b"").decode("latin1"), effective_origin)
             except HTTPException as error:
@@ -118,14 +119,14 @@ class RequestBoundary:
                 return
             if not message.get("more_body", False):
                 break
-        json_request = interpretation or (scope["path"] == "/v1/pair" and scope["method"] == "POST")
+        json_request = interpretation or synthesis or (scope["path"] == "/v1/pair" and scope["method"] == "POST")
         if body and not json_request:
             await reject(400, "body_not_supported")
             return
         if json_request and headers.get(b"content-type", b"").split(b";", 1)[0].strip().lower() != b"application/json":
             await reject(415, "json_required")
             return
-        if interpretation:
+        if interpretation or synthesis:
             from .services.ollama_client import strict_json
             try:
                 strict_json(bytes(body))

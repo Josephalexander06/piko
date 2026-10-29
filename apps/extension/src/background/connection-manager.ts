@@ -1,3 +1,5 @@
+import { isSpeechText, isSpeechWav } from '../features/voice-output/speech.validation'
+import { MAX_SPEECH_BYTES, SpeechError, speechErrors } from '../features/voice-output/speech.types'
 import { InterpretationError, interpretationErrors, isInterpretResponse } from '../features/interpretation/interpretation.validation'
 import type { InterpretRequest, InterpretResponse } from '../features/interpretation/interpretation.generated'
 import { hasKeys, isRecord } from '../features/scanner/scanner.messages'
@@ -16,6 +18,7 @@ export class ConnectionManager {
   private busy = false
   private initialized = false
   private interpretationController: AbortController | null = null
+  private speechController: AbortController | null = null
   private audioController: AbortController | null = null
   constructor(private readonly http: typeof fetch = globalThis.fetch.bind(globalThis), private readonly now = Date.now, private readonly timeoutMs = REQUEST_TIMEOUT_MS) {}
 
@@ -91,6 +94,67 @@ export class ConnectionManager {
     } finally {
       clearTimeout(timer); signal.removeEventListener('abort', abort)
       if (this.audioController === controller) this.audioController = null
+    }
+  }
+
+  async synthesizeSpeech(text: string, signal: AbortSignal): Promise<Uint8Array> {
+    if (!isSpeechText(text)) throw new SpeechError('invalid-speech-text')
+    if (this.speechController) throw new SpeechError('speech-busy')
+    const controller = new AbortController()
+    this.speechController = controller
+    const abort = () => controller.abort()
+    signal.addEventListener('abort', abort, { once: true })
+    const timer = setTimeout(abort, 28_000)
+    try {
+      if (signal.aborted) throw new SpeechError('speech-cancelled')
+      await this.prepare()
+      const session = await this.saved()
+      if (!session || session.pendingRevocation || this.now() >= session.expiresAt) throw new SpeechError('session-expired')
+      const response = await this.http(`${SERVICE_ORIGIN}/v1/synthesize`, {
+        method: 'POST', body: JSON.stringify({ text }), headers: { Authorization: `Bearer ${session.token}`, 'X-Piko-Extension-Origin': session.origin, 'Content-Type': 'application/json' },
+        signal: controller.signal, cache: 'no-store', credentials: 'omit', redirect: 'error', mode: 'cors',
+      })
+      if (response.status === 401 || response.status === 403) {
+        await this.clear()
+        this.state = { ...initialConnection, status: 'expired', error: 'session-expired' }
+        throw new SpeechError('session-expired')
+      }
+      const contentType = response.headers.get('content-type')?.split(';')[0].trim()
+      if (!response.body || contentType !== (response.ok ? 'audio/wav' : 'application/json')) throw new SpeechError('invalid-speech-audio')
+      const maximum = response.ok ? MAX_SPEECH_BYTES : 4096
+      if (Number(response.headers.get('content-length') ?? 0) > maximum) throw new SpeechError('speech-audio-too-large')
+      const reader = response.body.getReader()
+      const chunks: Uint8Array[] = []
+      let length = 0
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          length += value.length
+          if (length > maximum) { await reader.cancel(); throw new SpeechError('speech-audio-too-large') }
+          chunks.push(value)
+        }
+      } finally { reader.releaseLock() }
+      const audio = new Uint8Array(length)
+      let offset = 0
+      for (const chunk of chunks) { audio.set(chunk, offset); offset += chunk.length }
+      if (!response.ok) {
+        let error: unknown
+        try { error = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(audio)) } catch { throw new SpeechError('speech-synthesis-failed') }
+        if (isRecord(error) && hasKeys(error, ['error']) && (speechErrors as readonly unknown[]).includes(error.error)) throw new SpeechError(error.error as SpeechError['code'])
+        throw new SpeechError('speech-synthesis-failed')
+      }
+      if (!isSpeechWav(audio)) throw new SpeechError('invalid-speech-audio')
+      const current = await this.saved()
+      if (!current || current.token !== session.token || current.pendingRevocation || this.now() >= current.expiresAt) throw new SpeechError('session-expired')
+      if (controller.signal.aborted) throw new SpeechError('speech-cancelled')
+      return audio
+    } catch (error) {
+      if (error instanceof SpeechError) throw error
+      throw new SpeechError(controller.signal.aborted ? signal.aborted ? 'speech-cancelled' : 'speech-timeout' : 'service-unavailable')
+    } finally {
+      clearTimeout(timer); signal.removeEventListener('abort', abort)
+      if (this.speechController === controller) this.speechController = null
     }
   }
 
@@ -226,7 +290,7 @@ export class ConnectionManager {
     this.state = { ...initialConnection }
   }
   async handle(request: ConnectionRequest): Promise<ConnectionResponse> {
-    if (request.type === 'PIKO_SERVICE_DISCONNECT') { this.audioController?.abort(); this.interpretationController?.abort() }
+    if (request.type === 'PIKO_SERVICE_DISCONNECT') { this.audioController?.abort(); this.interpretationController?.abort(); this.speechController?.abort() }
     if (this.busy) return { requestId: request.requestId, ok: false, state: { ...initialConnection, error: 'busy' } }
     this.busy = true
     try {

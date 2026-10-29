@@ -66,7 +66,7 @@ npm run build
 - Production permissions are `sidePanel`, `activeTab`, `scripting`, `storage`,
   and only the loopback service host. No automatic content-script registrations.
 - Run `npm run typecheck` and `npm run lint` before building.
-- Production ZIP output: `release/crx-piko-extension-0.2.0.zip`.
+- Production ZIP output: `release/crx-piko-extension-0.3.0.zip`.
 - See [the root setup guide](../../docs/04-development-setup.md) for full setup
   and manual toolbar verification.
 - See [the UI guide](../../docs/05-extension-ui.md) for the demo workflow and tests.
@@ -85,3 +85,12 @@ worker to the authenticated companion, which alone calls local Ollama. Validated
 proposals appear in the existing review controls, with inclusion/overwrite
 unselected. See [the Qwen guide](../../docs/10-local-qwen-interpretation.md)
 for setup, measured model accuracy, limitations and verification.
+
+## Step 10 speech output
+
+**Spoken responses** defaults off. After configuring and pairing a companion with
+Piper ready, enable speech to hear the visible question. **Play aloud** provides
+manual replay and the autoplay fallback; **Stop speech and record** coordinates
+with Whisper capture. Speech is optional and makes no form changes. See the
+[Step 10 guide](../../docs/11-local-piper-speech.md) for setup, privacy controls,
+voice licensing, measured verification and manual hardware checks.

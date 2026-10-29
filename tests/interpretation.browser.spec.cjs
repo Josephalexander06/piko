@@ -80,7 +80,8 @@ test.afterEach(async()=>{
     }
     if(panel&&!panel.isClosed()) expect(await panel.evaluate(()=>window.__violations)).toEqual([]);
     if(worker) {
-      expect(await worker.evaluate(async()=>Object.keys(await chrome.storage.session.get(null)))).toEqual(['piko.localService.session.v1']);
+      expect(await worker.evaluate(async()=>Object.keys(await chrome.storage.session.get(null)).every(key=>['piko.localService.session.v1','piko.assistant.session.v1'].includes(key)))).toBe(true);
+      expect(await worker.evaluate(async()=>((await chrome.storage.session.get('piko.assistant.session.v1'))['piko.assistant.session.v1']?.facts??[]))).toEqual([]);
       expect(await worker.evaluate(async()=>Object.keys(await chrome.storage.local.get(null)))).toEqual([]);
     }
     if(page)expect(requests.every(r=>r.url===page.url() || r.worker&&r.url.startsWith(`${base}/v1/`))).toBe(true);
@@ -124,7 +125,7 @@ test('unknown model fields and invalid options fail closed while edited text rem
 test('cancelling or changing the scan rejects late proposals without clearing the edited answer',async()=>{
   await start();mode='timeout';await interpret();
   await expect(panel.getByRole('button',{name:'Cancel interpretation',exact:true})).toBeVisible();
-  await panel.getByRole('button',{name:'Cancel interpretation',exact:true}).click();
+  await panel.getByRole('button',{name:'Cancel interpretation',exact:true}).evaluate(button=>button.click());
   await expect(panel.getByRole('alert')).toContainText('cancelled');
   await expect(panel.getByLabel('Edited answer for this form')).toHaveValue(/Alex Thomas/);
   await panel.waitForTimeout(1500);

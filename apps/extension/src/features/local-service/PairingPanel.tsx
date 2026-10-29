@@ -28,10 +28,10 @@ export function PairingPanel({ state, busy, act }: { state: ConnectionState; bus
         <Button variant="outline" disabled={busy || state.status !== 'paired'} onClick={() => void act({ type: 'PIKO_SERVICE_CAPABILITIES' })}>Check capabilities</Button>
       </div>
       <Button variant="outline" className="min-h-10 w-full" disabled={busy} onClick={() => { setCode(''); void act({ type: 'PIKO_SERVICE_DISCONNECT' }) }}>Disconnect service</Button>
-      {state.capabilities && <ul aria-label="Local service capabilities" className="space-y-1"><li>Inference: {state.capabilities.inference.replace('_', ' ')}</li><li>Transcription: {state.capabilities.transcription.replace('_', ' ')}</li><li>Speech synthesis: not integrated</li></ul>}
+      {state.capabilities && <ul aria-label="Local service capabilities" className="space-y-1"><li>Inference: {state.capabilities.inference.replace('_', ' ')}</li><li>Transcription: {state.capabilities.transcription.replace('_', ' ')}</li><li>Speech synthesis: {state.capabilities.speech_synthesis.replace('_', ' ')}</li></ul>}
       {state.checkedAt !== null && <p>Last verified: {new Date(state.checkedAt).toLocaleTimeString()}</p>}
       {state.expiresAt !== null && <p>Session expires: {new Date(state.expiresAt).toLocaleString()}</p>}
-      <p>Sessions expire after 12 hours and are invalidated by a service restart. Restart the service to obtain a new code after disconnecting. Only explicitly recorded audio is uploaded for transcription. Clicking Interpret sends your edited answer and eligible field metadata to the local companion. No cloud inference is used.</p>
+      <p>Sessions expire after 12 hours and are invalidated by a service restart. Restart the service to obtain a new code after disconnecting. Only explicitly recorded audio is uploaded for transcription. Clicking Interpret sends your edited answer and eligible field metadata to the local companion. Play aloud sends the visible assistant message for local speech generation. No cloud inference is used.</p>
     </div>
   </details>
 }

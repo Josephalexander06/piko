@@ -1,3 +1,4 @@
+import { voiceSession } from '../voice-output/voice-session'
 import { initialRecording, type RecordingState } from './recording.types'
 import { MAX_AUDIO_BYTES, MAX_RECORDING_MS, VoiceInputError, type Transcript } from './transcription.types'
 
@@ -18,6 +19,7 @@ const defaults: RecorderDependencies = {
   now: () => performance.now(), limitMs: MAX_RECORDING_MS,
 }
 export class RecordingController {
+  private microphoneLease: symbol | null = null
   private state: RecordingState = { ...initialRecording }
   private recorder: MediaRecorder | null = null
   private stream: MediaStream | null = null
@@ -33,7 +35,11 @@ export class RecordingController {
   get snapshot() { return { ...this.state } }
   get retainedBytes() { return this.size }
   private set(next: RecordingState) { this.state = next; this.update({ ...next }) }
-  private stopTracks() { this.stream?.getTracks().forEach(track => track.stop()); this.stream = null }
+  private stopTracks() {
+    this.stream?.getTracks().forEach(track => track.stop()); this.stream = null
+    if (this.microphoneLease) voiceSession.endRecording(this.microphoneLease)
+    this.microphoneLease = null
+  }
   private timers() { clearTimeout(this.timer); clearInterval(this.ticker) }
   reset(notify = true) {
     this.generation++; this.abort?.abort(); this.abort = null; this.timers()
@@ -53,6 +59,7 @@ export class RecordingController {
     if (['recording', 'requesting-permission', 'processing'].includes(this.state.stage)) return
     this.reset(false)
     const version = this.generation
+    this.microphoneLease = voiceSession.beginRecording(() => this.reset())
     this.set({ ...initialRecording, stage: 'requesting-permission' })
     try {
       const stream = await this.deps.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false })

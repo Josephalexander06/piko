@@ -4,3 +4,6 @@ pydantic==2.14.2
 uvicorn==0.54.0
 python-multipart==0.0.32
 httpx==0.28.1
+piper-tts==1.8.0
+# Pin the native runtime whose pre-import telemetry opt-out is verified here.
+onnxruntime==1.31.1
