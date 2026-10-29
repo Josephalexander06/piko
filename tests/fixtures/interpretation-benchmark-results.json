@@ -1,0 +1,16 @@
+{
+  "model": "qwen3.5:2b",
+  "cases_run": 40,
+  "correct_cases": 36,
+  "strict_case_accuracy": 0.9,
+  "target_met": false,
+  "total_seconds": 68.543,
+  "mean_seconds": 1.714,
+  "max_seconds": 3.801,
+  "failures": {
+    "incorrect-proposal-or-clarification": 4
+  },
+  "python_version": "3.14.7",
+  "prompt_sha256": "71809ec05c7b46126f76702c4b2426256588cc4e377cfef63e622d6d3aa390ff",
+  "cases_sha256": "0367b4e1f14c1ddada634c35e8efdce275c7f830a7a76443ebb6e9a36662216d"
+}

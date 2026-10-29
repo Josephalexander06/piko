@@ -264,6 +264,7 @@ test('the panel scans its own window when URL metadata is withheld and another w
   await expect(scanner).toContainText('17 supported fields');
   await expect(scanner).toContainText('Registration form');
   await expect(panel.getByText('Page could not be inspected', { exact: true })).toHaveCount(0);
-  await expect(panel.getByText(/Piko v0\.1\.1/)).toBeVisible();
+  const version = require('../apps/extension/package.json').version.replace(/\./g, '\\.');
+  await expect(panel.getByText(new RegExp(`Piko v${version}`))).toBeVisible();
   await worker.evaluate(async (id) => chrome.windows.remove(id), otherWindow.id);
 });

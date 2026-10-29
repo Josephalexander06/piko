@@ -6,6 +6,8 @@ import type { ScanResult } from '../scanner/scanner.types'
 import type { FillBatchResult, FillInstruction, FillPreflight, FillValue } from './fill.types'
 import { cancelReview, requestFill } from './fill.service'
 import { FillResults } from './FillResults'
+import { InterpretationPanel } from '../interpretation/InterpretationPanel'
+import type { InterpretResponse } from '../interpretation/interpretation.generated'
 
 interface Draft { selected: boolean; text: string; overwrite: boolean }
 interface Review { reviewId: string; expiresAt: number; items: FillInstruction[] }
@@ -20,6 +22,7 @@ export function FillPreview({ scan, active }: { scan: ScanResult; active: boolea
   const [outcome, setOutcome] = useState<FillBatchResult | FillPreflight | null>(null)
   const generation = useRef(0)
   const activeRef = useRef(active)
+  const modelFields = useRef(new Set<string>())
   useEffect(() => { activeRef.current = active }, [active])
   useEffect(() => () => { generation.current++ }, [])
   useEffect(() => {
@@ -28,10 +31,27 @@ export function FillPreview({ scan, active }: { scan: ScanResult; active: boolea
     return () => clearTimeout(timer)
   }, [review])
   function update(fieldId: string, change: Partial<Draft>) {
+    modelFields.current.delete(fieldId)
     if (review) void cancelReview(review.reviewId)
     generation.current++
     setDrafts((previous) => ({ ...previous, [fieldId]: { ...(previous[fieldId] ?? { selected: false, text: '', overwrite: false }), ...change } }))
     setReview(null); setApproved(false); setOutcome(null); setError('')
+  }
+  function receiveProposals(result: InterpretResponse | null) {
+    if (review) void cancelReview(review.reviewId)
+    generation.current++
+    setReview(null); setApproved(false); setOutcome(null); setError('')
+    const oldModelFields = modelFields.current
+    modelFields.current = new Set(result?.updates.map(update => update.fieldId) ?? [])
+    setDrafts(previous => {
+      const next = { ...previous }
+      for (const id of oldModelFields) delete next[id]
+      for (const update of result?.updates ?? []) next[update.fieldId] = {
+        selected: false, overwrite: false,
+        text: 'value' in update.target ? update.target.value : 'optionId' in update.target ? update.target.optionId : String(update.target.checked),
+      }
+      return next
+    })
   }
   const items: FillInstruction[] = fields.filter((field) => drafts[field.fieldId]?.selected).map((field) => {
     const draft = drafts[field.fieldId]
@@ -58,8 +78,9 @@ export function FillPreview({ scan, active }: { scan: ScanResult; active: boolea
     setBusy(false)
   }
   return <section aria-label="Manual form filling" className="space-y-3 border-t pt-4">
+    <InterpretationPanel scan={scan} active={active && !busy && !review} onProposals={receiveProposals} />
     <h3 className="text-sm font-semibold">Prepare manual answers</h3>
-    <p className="text-xs leading-5 text-muted-foreground">Enter synthetic test values, include specific fields, then review. Answers stay in temporary extension memory and never go to the companion service. AI is not integrated.</p>
+    <p className="text-xs leading-5 text-muted-foreground">Edit proposed values or enter answers manually, include specific fields, then review. Manual edits stay in temporary extension memory. Overwriting and filling require separate approval.</p>
     <fieldset disabled={!active || busy} className="min-w-0 space-y-4">{fields.map((field) => {
       const draft = drafts[field.fieldId] ?? { selected: false, text: '', overwrite: false }
       const id = `proposal-${field.fieldId}`

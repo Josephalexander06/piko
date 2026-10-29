@@ -1,15 +1,18 @@
 
-# Piko — Step 8 local voice transcription
+# Piko — Step 9 local Qwen interpretation
 
 A local-first Chrome extension with an explicitly activated form scanner,
 manual proposal review, one-use approval, verified form filling, and a separate
 synthetic conversation/review demo. The independent
 Python companion service supports health checks, temporary pairing, and authenticated
 capability and connectivity checks at `http://127.0.0.1:8765`, plus authenticated
-local Whisper.cpp voice transcription. Explicitly recorded audio is processed
-on this computer and returned as editable text. Accepting a transcript adds only
-a conversation message. Form answers and page metadata are never sent to the
-service. Answer interpretation and speech synthesis remain `not_integrated`.
+local Whisper.cpp transcription and structured Qwen interpretation through local Ollama.
+Explicitly recorded audio becomes editable text. On a scanned form, **Interpret edited
+answer** sends only that reviewed text and eligible field metadata to the paired
+companion. Validated proposals appear in the editable review controls with no
+fields selected. Filling still requires separate exact-batch approval. Speech
+synthesis remains `not_integrated`. See the [Step 9 guide](docs/10-local-qwen-interpretation.md)
+for setup, contracts, privacy boundaries and actual model benchmark results.
 
 ## Repository layout
 
@@ -25,7 +28,7 @@ scripts/             Live service verification utility
 
 ## Quick start
 
-Use Node.js 22.12+ (or 20.19+) and Python 3.10+. Commands below assume the
+Use Node.js 22.12+ (or 20.19+) and Python 3.11+. Commands below assume the
 repository root unless a `cd` is shown. Python 3.14 was used during setup.
 
 ```bash
@@ -112,10 +115,15 @@ On Windows, use `py scripts/verify-service.py`. The expected response is:
   "status": "ok",
   "service": "local-voice-form-assistant",
   "version": "0.1.0",
-  "inference": "not_integrated",
+  "inference": "local_ollama",
   "protocol_version": 1
 }
 ```
+
+For local interpretation, start Ollama with the installed `qwen3.5:2b` model,
+restart and pair the companion, inspect a form, edit an answer, and click
+**Interpret edited answer**. Inspect and interpretation remain separate actions.
+The model download is never automatic. See the [Step 9 guide](docs/10-local-qwen-interpretation.md).
 
 ## Verification
 
@@ -184,7 +192,7 @@ Use a Chrome extension connected to a local companion service.
 | Form adapter | Content script, MutationObserver | Extract fields, insert approved values, observe changes |
 | Local service | Python, FastAPI, Pydantic | Coordinate speech, model inference, validation |
 | Speech recognition | whisper.cpp | Transcribe recordings locally |
-| Language model | Ollama, local Qwen2.5 3B | Interpret answers and propose field mappings |
+| Language model | Ollama, local Qwen3.5 2B (configurable) | Interpret answers and propose field mappings |
 | Speech synthesis | Piper | Speak questions and progress messages |
 | Temporary profile | Extension memory | Reuse explicitly selected details during the active session |
 
@@ -258,7 +266,7 @@ Assume one developer and an existing computer; the schedule is a prototype targe
 | Hours 10–12 | Conditional fields, validation feedback, corrections, failure handling |
 | Hours 12–14 | End-to-end checks, user trials, demo recording, setup documentation |
 
-Start with a multilingual Whisper base model and quantized Qwen2.5 3B. If response times are unacceptable, benchmark Whisper tiny; retain text input as a fallback. Do not silently switch to cloud processing.
+Start with a multilingual Whisper base model and local Qwen3.5 2B. If response times are unacceptable, benchmark Whisper tiny; retain text input as a fallback. Do not silently switch to cloud processing.
 
 The hardware benchmark is a release gate: if the available machine cannot run the local pipeline acceptably, report that limitation rather than promise real-time voice.
 

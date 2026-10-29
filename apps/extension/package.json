@@ -1,16 +1,16 @@
 {
   "name": "piko-extension",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
-  "description": "Local-first voice form assistant — development skeleton",
+  "description": "Local-first voice form assistant \u2014 development skeleton",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint . --max-warnings 0",
-    "generate:contracts": "node scripts/generate-scanner-validator.cjs",
+    "generate:contracts": "node scripts/generate-scanner-validator.cjs && node scripts/generate-interpret-validator.cjs",
     "prebuild": "npm run generate:contracts",
     "pretypecheck": "npm run generate:contracts",
     "predev": "npm run generate:contracts"

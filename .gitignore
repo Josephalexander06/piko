@@ -78,3 +78,5 @@ playwright-report/
 
 # Recreated from shared contracts before extension builds and development
 /apps/extension/src/features/scanner/scan-schema.generated.js
+
+/apps/extension/src/features/interpretation/*-schema.generated.js

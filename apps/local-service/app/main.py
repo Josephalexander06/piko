@@ -20,6 +20,10 @@ from .auth import ORIGIN_PATTERN, PairingManager, Session
 from .boundary import RequestBoundary
 from .voice_config import VoiceConfig, MAX_AUDIO_BYTES
 from .transcription import Transcriber, Transcript, VoiceError
+from .services.ollama_client import OllamaClient, InterpretationError
+from .services.interpretation_service import InterpretationService
+from .schemas.interpret import InterpretRequest, InterpretResponse
+from .api.interpret import interpret_request
 
 
 class StrictModel(BaseModel):
@@ -30,7 +34,7 @@ class HealthResponse(StrictModel):
     status: Literal["ok"] = "ok"
     service: Literal["local-voice-form-assistant"] = "local-voice-form-assistant"
     version: Literal["0.1.0"] = "0.1.0"
-    inference: Literal["not_integrated"] = "not_integrated"
+    inference: Literal["local_ollama"] = "local_ollama"
     protocol_version: Literal[1] = 1
 
 
@@ -47,7 +51,7 @@ class PairResponse(StrictModel):
 
 class CapabilitiesResponse(StrictModel):
     protocol_version: Literal[1] = 1
-    inference: Literal["not_integrated"] = "not_integrated"
+    inference: Literal["ready", "unavailable"]
     transcription: Literal["ready", "unavailable"]
     speech_synthesis: Literal["not_integrated"] = "not_integrated"
 
@@ -66,12 +70,14 @@ def authenticate(request: Request) -> Session:
     return request.app.state.pairing.authenticate(request.headers.get("authorization", ""), request.state.extension_origin)
 
 
-def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable[[], float] = time.time, announce: Callable[[str], None] | None = None, voice_config: VoiceConfig | None = None, transcriber: Transcriber | None = None) -> FastAPI:
+def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable[[], float] = time.time, announce: Callable[[str], None] | None = None, voice_config: VoiceConfig | None = None, transcriber: Transcriber | None = None, ollama_client: OllamaClient | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         manager = PairingManager(clock, wall_clock)
         application.state.pairing = manager
         application.state.transcriber = transcriber or Transcriber(voice_config if voice_config is not None else VoiceConfig.load())
+        application.state.ollama = ollama_client or OllamaClient()
+        application.state.interpreter = InterpretationService(application.state.ollama)
         if not application.state.transcriber.config.configured:
             logging.getLogger("piko.service").warning("Local speech recognition is unavailable; configure the local executables and model.")
         code = manager.start()
@@ -87,6 +93,7 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
             yield
         finally:
             manager.clear()
+            await application.state.ollama.close()
 
     application = FastAPI(title="Local Voice Form Assistant Service", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     application.add_middleware(CORSMiddleware, allow_origin_regex=f"^{ORIGIN_PATTERN}$", allow_methods=["GET", "POST", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-Piko-Extension-Origin"], allow_credentials=False, max_age=60)
@@ -109,6 +116,10 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
     async def voice_error(_request: Request, error: VoiceError):
         return JSONResponse({"error": error.code}, status_code=error.status)
 
+    @application.exception_handler(InterpretationError)
+    async def interpretation_error(_request: Request, error: InterpretationError):
+        return JSONResponse({"error": error.code}, status_code=error.status)
+
     @application.get("/v1/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         return HealthResponse()
@@ -122,7 +133,11 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
 
     @application.get("/v1/capabilities", response_model=CapabilitiesResponse)
     async def capabilities(request: Request, _session: Annotated[Session, Depends(authenticate)]) -> CapabilitiesResponse:
-        return CapabilitiesResponse(transcription="ready" if request.app.state.transcriber.config.configured else "unavailable")
+        return CapabilitiesResponse(inference="ready" if await request.app.state.ollama.available() else "unavailable", transcription="ready" if request.app.state.transcriber.config.configured else "unavailable")
+
+    @application.post("/v1/interpret", response_model=InterpretResponse)
+    async def interpret(payload: InterpretRequest, request: Request, _session: Annotated[Session, Depends(authenticate)]) -> InterpretResponse:
+        return await interpret_request(payload, request, authenticate)
 
     @application.post("/v1/transcribe", response_model=Transcript)
     async def transcribe_audio(request: Request, _session: Annotated[Session, Depends(authenticate)]) -> Transcript:

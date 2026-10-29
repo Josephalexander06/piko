@@ -1,10 +1,8 @@
+import type { InterpretTarget } from '../interpretation/interpretation.generated'
 import type { ScanFieldType } from '../scanner/scanner.types'
 
 export type FillKind = ScanFieldType
-export type FillValue =
-  | { kind: 'text' | 'email' | 'tel' | 'number' | 'date' | 'textarea'; value: string }
-  | { kind: 'select' | 'radio'; optionId: string }
-  | { kind: 'checkbox'; checked: boolean }
+export type FillValue = InterpretTarget
 export interface FillInstruction { fieldId: string; target: FillValue; overwriteExisting: boolean }
 export type FillStatus = 'filled' | 'already-matched' | 'blocked' | 'invalid' | 'stale' | 'rejected' | 'not-verified'
 export interface FillItemResult { fieldId: string; status: FillStatus; reason?: FillReason }

@@ -1,28 +1,31 @@
 {
-  "requestId": "req_8f9a2b1c",
-  "sessionId": "sess_1029384756",
-  "formInstanceId": "form_inst_a1b2c3d4",
-  "proposedUpdates": [
+  "scanId": "scan_00000000000000000000000000000001",
+  "updates": [
     {
-      "fieldId": "f_name",
-      "value": "Jane Doe",
-      "confidence": 0.98,
-      "reasoning": "Mapped explicitly stated full name from spoken utterance."
+      "fieldId": "field_00000000000000000000000000000001",
+      "target": {
+        "kind": "text",
+        "value": "Alex Thomas"
+      },
+      "evidence": {
+        "source": "transcript",
+        "factId": null,
+        "quote": "My full name is Alex Thomas. My email address is alex@example.test."
+      }
     },
     {
-      "fieldId": "f_email",
-      "value": "jane.doe@example.org",
-      "confidence": 0.99,
-      "reasoning": "Mapped email address directly from transcript."
-    },
-    {
-      "fieldId": "f_pref",
-      "value": "email",
-      "confidence": 0.95,
-      "reasoning": "Matched preferred contact method 'email' to dropdown option value 'email'."
+      "fieldId": "field_00000000000000000000000000000002",
+      "target": {
+        "kind": "email",
+        "value": "alex@example.test"
+      },
+      "evidence": {
+        "source": "transcript",
+        "factId": null,
+        "quote": "My full name is Alex Thomas. My email address is alex@example.test."
+      }
     }
   ],
   "clarifications": [],
-  "unmatchedFacts": []
+  "missingFields": []
 }
-

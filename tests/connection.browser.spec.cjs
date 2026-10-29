@@ -105,7 +105,7 @@ test('real Chrome worker pairs, retrieves capabilities, pings and revokes withou
   await panel.getByRole('button', { name: 'Check service', exact: true }).click();
   await expect.poll(async () => ({ available: await panel.getByText('Companion available · not paired', { exact: true }).isVisible(), failures: [...failures] })).toMatchObject({ available: true });
   await pair(code);
-  await expect(panel.getByRole('list', { name: 'Local service capabilities' })).toContainText('Inference: not integrated');
+  await expect(panel.getByRole('list', { name: 'Local service capabilities' })).toContainText(/Inference: (ready|unavailable)/);
   await panel.getByRole('button', { name: 'Authenticated ping', exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Authenticated ping', exact: true })).toBeEnabled();
   await panel.getByRole('button', { name: 'Check capabilities', exact: true }).click();

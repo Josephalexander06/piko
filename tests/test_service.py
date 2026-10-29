@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/local-service"))
 
 from httpx import ASGITransport, AsyncClient
+from unittest.mock import AsyncMock
 from app.main import create_app
 from app.auth import SESSION_TTL
 from app.voice_config import VoiceConfig
@@ -35,6 +36,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.lifespan = self.app.router.lifespan_context(self.app)
         await self.lifespan.__aenter__()
         self.addAsyncCleanup(self.lifespan.__aexit__, None, None, None)
+        self.app.state.ollama.available = AsyncMock(return_value=False)
         self.code = self.announcements[0].split(": ")[-1]
         self.client = AsyncClient(transport=ASGITransport(app=self.app), base_url="http://127.0.0.1:8765", headers={"Origin": ORIGIN})
         self.addAsyncCleanup(self.client.aclose)
@@ -47,7 +49,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_health_without_authentication(self):
         response = await self.client.get("/v1/health")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok", "service": "local-voice-form-assistant", "version": "0.1.0", "inference": "not_integrated", "protocol_version": 1})
+        self.assertEqual(response.json(), {"status": "ok", "service": "local-voice-form-assistant", "version": "0.1.0", "inference": "local_ollama", "protocol_version": 1})
         self.assertEqual(response.headers["cache-control"], "no-store")
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://127.0.0.1:8765") as client:
             self.assertEqual((await client.get("/v1/health")).status_code, 200)
@@ -61,7 +63,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(self.code, repr(vars(self.app.state.pairing)))
         headers = {"Authorization": f"Bearer {token}"}
         self.assertEqual((await self.client.get("/v1/ping", headers=headers)).json(), {"protocol_version": 1, "status": "ok"})
-        self.assertEqual((await self.client.get("/v1/capabilities", headers=headers)).json(), {"protocol_version": 1, "inference": "not_integrated", "transcription": "unavailable", "speech_synthesis": "not_integrated"})
+        self.assertEqual((await self.client.get("/v1/capabilities", headers=headers)).json(), {"protocol_version": 1, "inference": "unavailable", "transcription": "unavailable", "speech_synthesis": "not_integrated"})
 
     async def test_invalid_code_does_not_create_session(self):
         response = await self.client.post("/v1/pair", json={"protocol_version": 1, "code": "0" * 16})
@@ -192,9 +194,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 426)
         self.assertIsNone(self.app.state.pairing.session)
 
-    async def test_no_inference_form_or_remote_documentation_routes(self):
-        self.assertEqual(set(self.app.openapi()["paths"]), {"/v1/health", "/v1/pair", "/v1/ping", "/v1/capabilities", "/v1/session", "/v1/transcribe"})
-        for route in ("/interpret", "/v1/interpret", "/api/v1/interpret", "/transcribe", "/synthesize", "/v1/synthesize", "/forms", "/docs", "/redoc", "/openapi.json"):
+    async def test_only_intended_service_routes_and_no_remote_documentation(self):
+        self.assertEqual(set(self.app.openapi()["paths"]), {"/v1/health", "/v1/pair", "/v1/ping", "/v1/capabilities", "/v1/session", "/v1/transcribe", "/v1/interpret"})
+        for route in ("/interpret", "/api/v1/interpret", "/transcribe", "/synthesize", "/v1/synthesize", "/forms", "/docs", "/redoc", "/openapi.json"):
             self.assertEqual((await self.client.get(route)).status_code, 404)
 
     async def test_code_printed_only_once_and_requests_do_not_log_secrets(self):

@@ -10,8 +10,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     {children}
     <footer className="mt-auto space-y-3 pt-2">
       <Separator />
-      <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><LockKeyhole aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />Drafts and approvals stay in temporary extension memory. Approved values are shared with the destination page.</p>
-      <p className="text-[11px] text-muted-foreground">Piko v{pkg.version} · Step 8 · Local voice transcription</p>
+      <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><LockKeyhole aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />Drafts are temporary. Interpretation uses your local companion; filling requires your approval.</p>
+      <p className="text-[11px] text-muted-foreground">Piko v{pkg.version} · Step 9 · Local Qwen interpretation</p>
 
     </footer>
   </main>

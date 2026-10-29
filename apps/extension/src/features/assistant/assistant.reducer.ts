@@ -78,7 +78,7 @@ export function assistantReducer(state: AssistantState, action: AssistantAction)
       if (state.stage !== 'conversation' || typeof action.text !== 'string' || !action.text.trim() || action.text.length > 4096) return state
       return { ...state, messages: [...state.messages,
         { id: `message-${state.messages.length}`, role: 'user', content: action.text.trim(), source: 'voice-transcript' },
-        { id: `message-${state.messages.length + 1}`, role: 'assistant', content: 'Transcript added. Answer interpretation is not integrated yet; no fields were changed.', source: 'demo' }],
+        { id: `message-${state.messages.length + 1}`, role: 'assistant', content: 'Transcript added to this synthetic demo. For local interpretation, reset the demo and inspect a real form. No fields were changed.', source: 'demo' }],
       }
     }
     case 'SET_DRAFT_ANSWER':

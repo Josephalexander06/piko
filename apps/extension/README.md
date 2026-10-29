@@ -66,7 +66,7 @@ npm run build
 - Production permissions are `sidePanel`, `activeTab`, `scripting`, `storage`,
   and only the loopback service host. No automatic content-script registrations.
 - Run `npm run typecheck` and `npm run lint` before building.
-- Production ZIP output: `release/crx-piko-extension-0.1.1.zip`.
+- Production ZIP output: `release/crx-piko-extension-0.2.0.zip`.
 - See [the root setup guide](../../docs/04-development-setup.md) for full setup
   and manual toolbar verification.
 - See [the UI guide](../../docs/05-extension-ui.md) for the demo workflow and tests.
@@ -76,3 +76,12 @@ npm run build
 - `src/features/scanner/` contains messages, validation, lifecycle state, and inventory UI.
 - `scripts/generate-scanner-validator.cjs` generates a CSP-safe validator from the shared contracts
   before dev, build, and typecheck; the generated JS is ignored and requires no runtime code generation.
+
+## Step 9 interpretation
+
+After pairing and scanning, use **Prepare answers with local Qwen** to edit a
+transcript or type an answer. **Interpret edited answer** sends it through the
+worker to the authenticated companion, which alone calls local Ollama. Validated
+proposals appear in the existing review controls, with inclusion/overwrite
+unselected. See [the Qwen guide](../../docs/10-local-qwen-interpretation.md)
+for setup, measured model accuracy, limitations and verification.

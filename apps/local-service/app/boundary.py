@@ -91,7 +91,15 @@ class RequestBoundary:
                 return message
             await self.app(scope, audio_receive, safe_send)
             return
-        if int(length) > MAX_BODY_BYTES:
+        interpretation = scope["path"] == "/v1/interpret" and scope["method"] == "POST"
+        maximum = 131072 if interpretation else MAX_BODY_BYTES
+        if interpretation:
+            try:
+                scope["app"].state.pairing.authenticate(headers.get(b"authorization", b"").decode("latin1"), effective_origin)
+            except HTTPException as error:
+                await reject(error.status_code, error.detail)
+                return
+        if int(length) > maximum:
             await reject(413, "body_too_large")
             return
         body = bytearray()
@@ -105,19 +113,32 @@ class RequestBoundary:
             if message["type"] == "http.disconnect":
                 return
             body.extend(message.get("body", b""))
-            if len(body) > MAX_BODY_BYTES:
+            if len(body) > maximum:
                 await reject(413, "body_too_large")
                 return
             if not message.get("more_body", False):
                 break
-        if body and not (scope["path"] == "/v1/pair" and scope["method"] == "POST"):
+        json_request = interpretation or (scope["path"] == "/v1/pair" and scope["method"] == "POST")
+        if body and not json_request:
             await reject(400, "body_not_supported")
             return
-        if scope["path"] == "/v1/pair" and scope["method"] == "POST" and headers.get(b"content-type", b"").split(b";", 1)[0].strip().lower() != b"application/json":
+        if json_request and headers.get(b"content-type", b"").split(b";", 1)[0].strip().lower() != b"application/json":
             await reject(415, "json_required")
             return
+        if interpretation:
+            from .services.ollama_client import strict_json
+            try:
+                strict_json(bytes(body))
+            except (ValueError, UnicodeError, RecursionError):
+                await reject(422, "invalid_request")
+                return
 
+        consumed = False
         async def bounded_receive():
+            nonlocal consumed
+            if consumed:
+                return await receive()
+            consumed = True
             return {"type": "http.request", "body": bytes(body), "more_body": False}
 
         await self.app(scope, bounded_receive, safe_send)
