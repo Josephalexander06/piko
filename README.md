@@ -1,13 +1,15 @@
 
-# Piko — Step 7 authenticated local companion
+# Piko — Step 8 local voice transcription
 
 A local-first Chrome extension with an explicitly activated form scanner,
 manual proposal review, one-use approval, verified form filling, and a separate
 synthetic conversation/review demo. The independent
 Python companion service supports health checks, temporary pairing, and authenticated
-capability and connectivity checks at `http://127.0.0.1:8765`. Inference,
-transcription, and speech synthesis explicitly report `not_integrated`.
-No form answers, page metadata, transcripts, or audio are sent to the service.
+capability and connectivity checks at `http://127.0.0.1:8765`, plus authenticated
+local Whisper.cpp voice transcription. Explicitly recorded audio is processed
+on this computer and returned as editable text. Accepting a transcript adds only
+a conversation message. Form answers and page metadata are never sent to the
+service. Answer interpretation and speech synthesis remain `not_integrated`.
 
 ## Repository layout
 
@@ -90,6 +92,12 @@ Codes expire after five minutes and work once. Sessions last at most 12 hours.
 **Disconnect service** revokes the token; restart the service for another code.
 See the [Step 7 connection guide](docs/08-local-service-connection.md) for the API,
 permissions, restart behavior, limitations, and actual Chrome tests.
+
+For voice input, configure the local Whisper.cpp CLI, `base.en` model, FFmpeg,
+and FFprobe using the [Step 8 voice guide](docs/09-local-voice-input.md).
+After pairing, choose **Load demo form → Start conversation → Start voice
+recording**, speak for up to 20 seconds, and stop. Edit and explicitly accept
+the transcript; this does not prepare or approve form values.
 
 From the repository root, verify the running API:
 

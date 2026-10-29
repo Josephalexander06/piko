@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/local-service
 from httpx import ASGITransport, AsyncClient
 from app.main import create_app
 from app.auth import SESSION_TTL
+from app.voice_config import VoiceConfig
 
 ORIGIN = "chrome-extension://" + "a" * 32
 OTHER = "chrome-extension://" + "b" * 32
@@ -30,7 +31,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.now = 1000.0
         self.announcements = []
-        self.app = create_app(lambda: self.now, lambda: 1_800_000_000 + self.now, self.announcements.append)
+        self.app = create_app(lambda: self.now, lambda: 1_800_000_000 + self.now, self.announcements.append, voice_config=VoiceConfig())
         self.lifespan = self.app.router.lifespan_context(self.app)
         await self.lifespan.__aenter__()
         self.addAsyncCleanup(self.lifespan.__aexit__, None, None, None)
@@ -60,7 +61,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(self.code, repr(vars(self.app.state.pairing)))
         headers = {"Authorization": f"Bearer {token}"}
         self.assertEqual((await self.client.get("/v1/ping", headers=headers)).json(), {"protocol_version": 1, "status": "ok"})
-        self.assertEqual((await self.client.get("/v1/capabilities", headers=headers)).json(), {"protocol_version": 1, "inference": "not_integrated", "transcription": "not_integrated", "speech_synthesis": "not_integrated"})
+        self.assertEqual((await self.client.get("/v1/capabilities", headers=headers)).json(), {"protocol_version": 1, "inference": "not_integrated", "transcription": "unavailable", "speech_synthesis": "not_integrated"})
 
     async def test_invalid_code_does_not_create_session(self):
         response = await self.client.post("/v1/pair", json={"protocol_version": 1, "code": "0" * 16})
@@ -192,8 +193,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.app.state.pairing.session)
 
     async def test_no_inference_form_or_remote_documentation_routes(self):
-        self.assertEqual(set(self.app.openapi()["paths"]), {"/v1/health", "/v1/pair", "/v1/ping", "/v1/capabilities", "/v1/session"})
-        for route in ("/interpret", "/v1/interpret", "/api/v1/interpret", "/transcribe", "/synthesize", "/v1/transcribe", "/v1/synthesize", "/forms", "/docs", "/redoc", "/openapi.json"):
+        self.assertEqual(set(self.app.openapi()["paths"]), {"/v1/health", "/v1/pair", "/v1/ping", "/v1/capabilities", "/v1/session", "/v1/transcribe"})
+        for route in ("/interpret", "/v1/interpret", "/api/v1/interpret", "/transcribe", "/synthesize", "/v1/synthesize", "/forms", "/docs", "/redoc", "/openapi.json"):
             self.assertEqual((await self.client.get(route)).status_code, 404)
 
     async def test_code_printed_only_once_and_requests_do_not_log_secrets(self):

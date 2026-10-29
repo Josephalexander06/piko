@@ -2,6 +2,8 @@ import { hasKeys, isRecord } from '../features/scanner/scanner.messages'
 import { initialConnection, REQUEST_TIMEOUT_MS, SERVICE_ORIGIN, SESSION_KEY, SESSION_TTL_MS } from '../features/local-service/connection.types'
 import type { ConnectionError, ConnectionRequest, ConnectionResponse, ConnectionState } from '../features/local-service/connection.types'
 import { isCapabilities } from '../features/local-service/connection.validation'
+import { isTranscript } from '../features/voice-input/transcription.validation'
+import { MAX_AUDIO_BYTES, VoiceInputError, voiceErrors, type Transcript } from '../features/voice-input/transcription.types'
 
 interface StoredSession { token: string; origin: string; expiresAt: number; pendingRevocation: boolean }
 class ServiceError extends Error { constructor(readonly code: ConnectionError) { super(code) } }
@@ -11,6 +13,7 @@ export class ConnectionManager {
   private state: ConnectionState = { ...initialConnection }
   private busy = false
   private initialized = false
+  private audioController: AbortController | null = null
   constructor(private readonly http: typeof fetch = globalThis.fetch.bind(globalThis), private readonly now = Date.now, private readonly timeoutMs = REQUEST_TIMEOUT_MS) {}
 
   private async prepare() {
@@ -30,6 +33,63 @@ export class ConnectionManager {
   }
   private async clear() { await chrome.storage.session.remove(SESSION_KEY) }
   private async save(session: StoredSession) { await chrome.storage.session.set({ [SESSION_KEY]: session }) }
+
+  async transcribeAudio(audio: Blob, signal: AbortSignal): Promise<Transcript> {
+    if (this.audioController) throw new VoiceInputError('transcription-busy')
+    if (!audio.size) throw new VoiceInputError('empty-audio')
+    if (audio.size > MAX_AUDIO_BYTES) throw new VoiceInputError('audio-too-large')
+    const controller = new AbortController()
+    this.audioController = controller
+    const abort = () => controller.abort()
+    signal.addEventListener('abort', abort, { once: true })
+    const timer = setTimeout(abort, 28_000)
+    try {
+      if (signal.aborted) throw new VoiceInputError('request-cancelled')
+      await this.prepare()
+      const session = await this.saved()
+      if (!session || session.pendingRevocation || this.now() >= session.expiresAt) throw new VoiceInputError('session-expired')
+      const form = new FormData()
+      form.append('file', audio, 'recording')
+      const response = await this.http(`${SERVICE_ORIGIN}/v1/transcribe`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${session.token}`, 'X-Piko-Extension-Origin': session.origin }, signal: controller.signal, cache: 'no-store', credentials: 'omit', redirect: 'error', mode: 'cors' })
+      if (response.status === 401 || response.status === 403) {
+        await this.clear()
+        this.state = { ...initialConnection, status: 'expired', error: 'session-expired' }
+        throw new VoiceInputError('session-expired')
+      }
+      if (!response.body || response.headers.get('content-type')?.split(';')[0] !== 'application/json') throw new VoiceInputError('invalid-response')
+      const reader = response.body.getReader()
+      const chunks: Uint8Array[] = []
+      let length = 0
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          length += value.length
+          if (length > 32768) { await reader.cancel(); throw new VoiceInputError('invalid-response') }
+          chunks.push(value)
+        }
+      } finally { reader.releaseLock() }
+      const bytes = new Uint8Array(length)
+      let offset = 0
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
+      let result: unknown
+      try { result = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch { throw new VoiceInputError('invalid-response') }
+      if (!response.ok) {
+        if (isRecord(result) && hasKeys(result, ['error']) && typeof result.error === 'string' && (voiceErrors as readonly string[]).includes(result.error)) throw new VoiceInputError(result.error as VoiceInputError['code'])
+        throw new VoiceInputError('transcription-failed')
+      }
+      if (!isTranscript(result)) throw new VoiceInputError('invalid-response')
+      const current = await this.saved()
+      if (!current || current.token !== session.token || current.pendingRevocation || this.now() >= current.expiresAt) throw new VoiceInputError('session-expired')
+      return result
+    } catch (error) {
+      if (error instanceof VoiceInputError) throw error
+      throw new VoiceInputError(controller.signal.aborted ? signal.aborted ? 'request-cancelled' : 'transcription-timeout' : 'service-unavailable')
+    } finally {
+      clearTimeout(timer); signal.removeEventListener('abort', abort)
+      if (this.audioController === controller) this.audioController = null
+    }
+  }
 
   private async request(path: '/health' | '/pair' | '/ping' | '/capabilities' | '/session', method: 'GET' | 'POST' | 'DELETE' = 'GET', token?: string, code?: string): Promise<Record<string, unknown>> {
     const controller = new AbortController()
@@ -104,6 +164,7 @@ export class ConnectionManager {
     this.state = { ...initialConnection }
   }
   async handle(request: ConnectionRequest): Promise<ConnectionResponse> {
+    if (request.type === 'PIKO_SERVICE_DISCONNECT') this.audioController?.abort()
     if (this.busy) return { requestId: request.requestId, ok: false, state: { ...initialConnection, error: 'busy' } }
     this.busy = true
     try {

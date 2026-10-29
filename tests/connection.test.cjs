@@ -117,9 +117,62 @@ test('concurrent pairing is rejected and cannot issue duplicate pair requests', 
 });
 test('service-worker routing rejects webpage content scripts, unrelated extension pages and extra payloads', () => {
   const listeners = {};
-  const chrome = { runtime: { id: 'a'.repeat(32), getURL: (suffix) => `${origin}/${suffix}`, onMessage: { addListener: (fn) => { listeners.message = fn; } } }, sidePanel: { setPanelBehavior: async () => {} }, action: { onClicked: { addListener() {} } }, tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener() {} }, onActivated: { addListener() {} } } };
+  const chrome = { runtime: { id: 'a'.repeat(32), getURL: (suffix) => `${origin}/${suffix}`, onConnect: { addListener() {} }, onMessage: { addListener: (fn) => { listeners.message = fn; } } }, sidePanel: { setPanelBehavior: async () => {} }, action: { onClicked: { addListener() {} } }, tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener() {} }, onActivated: { addListener() {} } } };
   createLoader({ chrome, fetch: () => assert.fail('Unexpected HTTP') })(path.join(root, 'background/service-worker.ts'));
   const request = { type: 'PIKO_SERVICE_PAIR', requestId: 'request_' + '0'.repeat(32), code };
   for (const sender of [{ id: chrome.runtime.id, tab: { id: 7 }, url: 'https://example.test' }, { id: 'other', url: `${origin}/src/sidepanel/index.html` }, { id: chrome.runtime.id, url: `${origin}/other.html` }]) assert.equal(listeners.message(request, sender, () => assert.fail('Untrusted sender')), undefined);
   assert.equal(listeners.message({ ...request, formValues: 'PRIVATE' }, { id: chrome.runtime.id, url: `${origin}/src/sidepanel/index.html` }, () => assert.fail('Extra payload')), undefined);
+});
+
+const voiceReply = { status: 'ok', text: 'Synthetic voice answer.', language: 'en', durationMs: 1000, processingMs: 1 };
+const audio = () => new Blob(['synthetic recording'], { type: 'audio/webm' });
+test('audio upload requires a live non-revoking session and uses authenticated multipart at the fixed endpoint', async () => {
+  const s = setup();
+  await assert.rejects(s.manager.transcribeAudio(audio(), new AbortController().signal), { code: 'session-expired' });
+  assert.equal(s.calls.length, 0);
+  await s.act('PAIR', { code });
+  s.setHttp(async () => json(voiceReply));
+  assert.deepEqual(await s.manager.transcribeAudio(audio(), new AbortController().signal), voiceReply);
+  const { url, options } = s.calls.at(-1);
+  assert.equal(url, 'http://127.0.0.1:8765/v1/transcribe');
+  assert.equal(options.headers.Authorization, `Bearer ${token}`);
+  assert.equal(options.headers['X-Piko-Extension-Origin'], origin);
+  assert.equal(options.headers['Content-Type'], undefined);
+  assert.deepEqual([...options.body.keys()], ['file']);
+  assert.equal(await options.body.get('file').text(), 'synthetic recording');
+  s.data[s.SESSION_KEY].pendingRevocation = true;
+  const count = s.calls.length;
+  await assert.rejects(s.manager.transcribeAudio(audio(), new AbortController().signal), { code: 'session-expired' });
+  assert.equal(s.calls.length, count);
+});
+test('audio responses are bounded, exact-schema validated and never expose service diagnostics', async () => {
+  for (const [response, expected] of [[() => json({ ...voiceReply, token }), 'invalid-response'], [() => json({ ...voiceReply, text: 'x'.repeat(33000) }), 'invalid-response'], [() => json({ error: 'private subprocess output' }, 500), 'transcription-failed'], [() => json({ error: 'model-unavailable' }, 503), 'model-unavailable'], [() => json({ error: 'private' }, 401), 'session-expired']]) {
+    const s = setup(); await s.act('PAIR', { code }); s.setHttp(async () => response());
+    await assert.rejects(s.manager.transcribeAudio(audio(), new AbortController().signal), { code: expected, message: expected });
+    if (expected === 'session-expired') assert.equal(s.data[s.SESSION_KEY], undefined);
+  }
+});
+test('audio cancellation aborts HTTP, limits concurrency and rejects a result after session revocation', async () => {
+  const s = setup(); await s.act('PAIR', { code }); let entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  s.setHttp((_url, options) => new Promise((_resolve, reject) => { entered(); options.signal.addEventListener('abort', () => reject(Error('private'))); }));
+  const abort = new AbortController(); const first = s.manager.transcribeAudio(audio(), abort.signal); await waiting;
+  await assert.rejects(s.manager.transcribeAudio(audio(), new AbortController().signal), { code: 'transcription-busy' });
+  abort.abort(); await assert.rejects(first, { code: 'request-cancelled' });
+  s.setHttp(async () => { delete s.data[s.SESSION_KEY]; return json(voiceReply); });
+  await assert.rejects(s.manager.transcribeAudio(audio(), new AbortController().signal), { code: 'session-expired' });
+});
+
+test('voice ports accept only the side panel, allow one active transfer and release ownership on disconnect', () => {
+  let connected;
+  const chrome = { runtime: { id: 'a'.repeat(32), getURL: suffix => `${origin}/${suffix}`, onConnect: { addListener: fn => { connected = fn; } }, onMessage: { addListener() {} } }, sidePanel: { setPanelBehavior: async () => {} }, action: { onClicked: { addListener() {} } }, tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener() {} }, onActivated: { addListener() {} } } };
+  createLoader({ chrome, fetch: () => assert.fail('Unexpected HTTP') })(path.join(root, 'background/service-worker.ts'));
+  function port(sender, name = 'PIKO_VOICE_V1') {
+    return { sender, name, disconnected: false, disconnect() { this.disconnected = true; }, postMessage() {}, onMessage: { addListener() {} }, onDisconnect: { addListener(fn) { this.listener = fn; } } };
+  }
+  for (const sender of [{ id: chrome.runtime.id, tab: { id: 7 }, url: 'https://example.test' }, { id: 'other', url: `${origin}/src/sidepanel/index.html` }, { id: chrome.runtime.id, url: `${origin}/other.html` }]) { const p = port(sender); connected(p); assert.equal(p.disconnected, true); }
+  const sender = { id: chrome.runtime.id, url: `${origin}/src/sidepanel/index.html` };
+  const first = port(sender); connected(first); assert.equal(first.disconnected, false);
+  const duplicate = port(sender); connected(duplicate); assert.equal(duplicate.disconnected, true);
+  first.onDisconnect.listener(); const next = port(sender); connected(next); assert.equal(next.disconnected, false); next.onDisconnect.listener();
 });

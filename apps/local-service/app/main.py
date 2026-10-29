@@ -1,6 +1,8 @@
-"""Step 7 authenticated loopback companion. No models or form-data endpoints."""
+"""Authenticated loopback companion with bounded local voice transcription."""
 
 import time
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from typing import Annotated, Callable, Literal
 
@@ -9,9 +11,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
+from starlette.datastructures import UploadFile
+from starlette.formparsers import MultiPartParser, MultiPartException
+from starlette.requests import ClientDisconnect
+from python_multipart.exceptions import MultipartParseError
 
 from .auth import ORIGIN_PATTERN, PairingManager, Session
 from .boundary import RequestBoundary
+from .voice_config import VoiceConfig, MAX_AUDIO_BYTES
+from .transcription import Transcriber, Transcript, VoiceError
 
 
 class StrictModel(BaseModel):
@@ -40,7 +48,7 @@ class PairResponse(StrictModel):
 class CapabilitiesResponse(StrictModel):
     protocol_version: Literal[1] = 1
     inference: Literal["not_integrated"] = "not_integrated"
-    transcription: Literal["not_integrated"] = "not_integrated"
+    transcription: Literal["ready", "unavailable"]
     speech_synthesis: Literal["not_integrated"] = "not_integrated"
 
 
@@ -58,11 +66,14 @@ def authenticate(request: Request) -> Session:
     return request.app.state.pairing.authenticate(request.headers.get("authorization", ""), request.state.extension_origin)
 
 
-def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable[[], float] = time.time, announce: Callable[[str], None] | None = None) -> FastAPI:
+def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable[[], float] = time.time, announce: Callable[[str], None] | None = None, voice_config: VoiceConfig | None = None, transcriber: Transcriber | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         manager = PairingManager(clock, wall_clock)
         application.state.pairing = manager
+        application.state.transcriber = transcriber or Transcriber(voice_config if voice_config is not None else VoiceConfig.load())
+        if not application.state.transcriber.config.configured:
+            logging.getLogger("piko.service").warning("Local speech recognition is unavailable; configure the local executables and model.")
         code = manager.start()
         # The sole secret output is printed once to the startup terminal, never
         # through a logger. Request/error handlers never echo request content.
@@ -94,6 +105,10 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
     async def api_error(_request: Request, error: HTTPException):
         return JSONResponse({"error": error.detail}, status_code=error.status_code, headers=error.headers)
 
+    @application.exception_handler(VoiceError)
+    async def voice_error(_request: Request, error: VoiceError):
+        return JSONResponse({"error": error.code}, status_code=error.status)
+
     @application.get("/v1/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         return HealthResponse()
@@ -106,8 +121,54 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
         return PairResponse(token=token, expires_at=expires_at)
 
     @application.get("/v1/capabilities", response_model=CapabilitiesResponse)
-    async def capabilities(_session: Annotated[Session, Depends(authenticate)]) -> CapabilitiesResponse:
-        return CapabilitiesResponse()
+    async def capabilities(request: Request, _session: Annotated[Session, Depends(authenticate)]) -> CapabilitiesResponse:
+        return CapabilitiesResponse(transcription="ready" if request.app.state.transcriber.config.configured else "unavailable")
+
+    @application.post("/v1/transcribe", response_model=Transcript)
+    async def transcribe_audio(request: Request, _session: Annotated[Session, Depends(authenticate)]) -> Transcript:
+        if not request.app.state.transcriber.config.configured:
+            raise VoiceError("model-unavailable", 503)
+        if not request.headers.get("content-type", "").lower().startswith("multipart/form-data;"):
+            raise VoiceError("unsupported-audio", 415)
+        # Keep multipart spooling in bounded memory. Only the pipeline writes
+        # randomized per-request files, and cleans them on every exit path.
+        parser = MultiPartParser(request.headers, request.stream(), max_files=1, max_fields=0, max_part_size=MAX_AUDIO_BYTES)
+        parser.spool_max_size = MAX_AUDIO_BYTES + 16385
+        job = disconnect = None
+        try:
+            form = await parser.parse()
+            items = form.multi_items()
+            if len(items) != 1 or items[0][0] != "file" or not isinstance(items[0][1], UploadFile):
+                raise VoiceError("invalid-audio")
+            upload = items[0][1]
+            data = bytearray()
+            while chunk := await upload.read(65536):
+                data.extend(chunk)
+                if len(data) > request.app.state.transcriber.config.max_bytes:
+                    raise VoiceError("audio-too-large", 413)
+            job = asyncio.create_task(request.app.state.transcriber.transcribe(bytes(data)))
+            data.clear()
+            # Await disconnect directly: polling is_disconnected() uses a
+            # cancellation scope that can swallow an outer request cancellation.
+            disconnect = asyncio.create_task(request.receive())
+            finished, _ = await asyncio.wait({job, disconnect}, return_when=asyncio.FIRST_COMPLETED)
+            if disconnect in finished:
+                raise VoiceError("request-cancelled", 499)
+            # A session revoked/expired during inference cannot return a result.
+            authenticate(request)
+            return await job
+        except (MultiPartException, MultipartParseError):
+            raise VoiceError("invalid-audio") from None
+        except ClientDisconnect:
+            raise VoiceError("request-cancelled", 499) from None
+        finally:
+            tasks = [task for task in (job, disconnect) if task is not None]
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            for temporary in parser._files_to_close_on_error:
+                temporary.close()
 
     @application.get("/v1/ping", response_model=PingResponse)
     async def ping(_session: Annotated[Session, Depends(authenticate)]) -> PingResponse:

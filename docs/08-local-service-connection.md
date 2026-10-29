@@ -3,8 +3,9 @@
 The worker can check service health, exchange a temporary code for an
 origin-bound bearer session, retrieve capabilities, ping, and revoke that
 session. The existing scanner and approval-gated filling engine remain
-independent. There are no inference, transcription, synthesis, form-value,
-page-metadata, audio, subprocess, telemetry, or cloud-proxy endpoints.
+independent. Step 8 adds authenticated local audio transcription; see the
+[voice guide](09-local-voice-input.md). There are no answer-interpretation,
+synthesis, form-value, page-metadata, telemetry, or cloud-proxy endpoints.
 
 ## Start and pair
 
@@ -57,7 +58,8 @@ from the protocol version. API models reject extra keys and coerced types.
 | --- | --- | --- |
 | GET `/v1/health` | None; browser origins are still validated | Readiness, service version, `inference: not_integrated` |
 | POST `/v1/pair` | Correct unconsumed startup code + valid extension Origin | `protocol_version`, random `token`, Unix-second `expires_at` |
-| GET `/v1/capabilities` | Bearer token + exact paired Origin | Inference, transcription, speech synthesis: `not_integrated` |
+| GET `/v1/capabilities` | Bearer token + exact paired Origin | Transcription: `ready` or `unavailable`; inference/speech synthesis: `not_integrated` |
+| POST `/v1/transcribe` | Bearer token + exact paired Origin | Step 8 bounded audio upload and local transcription |
 | GET `/v1/ping` | Bearer token + exact paired Origin | `protocol_version: 1`, `status: ok` |
 | DELETE `/v1/session` | Bearer token + exact paired Origin | Revoke token, `status: disconnected` |
 
@@ -79,9 +81,10 @@ the independently random bearer token. CORS allows only extension origins,
 GET/POST/DELETE, Content-Type, Authorization and X-Piko-Extension-Origin, without cookies or credentials.
 
 All routes reject non-loopback clients, non-loopback Host headers, duplicate
-security headers, query strings, unexpected request bodies, bodies over 512
-bytes (including streamed bodies), oversized headers, and unsupported media
-types. The body receive deadline is three seconds. Validation errors never
+security headers, query strings, unexpected request bodies, oversized headers,
+and unsupported media types. Connection routes allow at most 512 body bytes
+(including streamed bodies), with a three-second receive deadline. Step 8's
+authenticated audio route has its own bounded multipart policy. Validation errors never
 echo submitted values. Responses are `no-store`. Model, interactive documentation,
 and OpenAPI HTTP routes are absent.
 
@@ -174,7 +177,7 @@ revocation, unavailable/timeout handling, no panel HTTP calls or persistent
 storage, and no form/audio payloads. Manual browser prompt behavior and unrelated
 websites are separate checks, not certified by these fixtures.
 
-Verified on Windows on 2026-10-30: 23 Python tests, 51 JavaScript tests plus the
+Step 7 baseline verified on Windows on 2026-10-30: 23 Python tests, 51 JavaScript tests plus the
 contract harness, explicit TypeScript check, lint, production build, five real
 connection browser tests in installed Chrome 156, and all 18 existing browser
 regressions in Edge 156 passed. The tests leave no companion process running.

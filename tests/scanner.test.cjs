@@ -69,7 +69,7 @@ function background(url = 'chrome://settings') {
   const opened = [];
   const panelBehavior = [];
   const chrome = {
-    runtime: { id: 'test-extension', getURL: (suffix) => `chrome-extension://test-extension/${suffix}`, onMessage: { addListener: (fn) => { listeners.message = fn; } }, sendMessage: async (message) => { notices.push(message); } },
+    runtime: { id: 'test-extension', getURL: (suffix) => `chrome-extension://test-extension/${suffix}`, onConnect: { addListener() {} }, onMessage: { addListener: (fn) => { listeners.message = fn; } }, sendMessage: async (message) => { notices.push(message); } },
     sidePanel: { setPanelBehavior: async (behavior) => { panelBehavior.push(behavior); }, open: async (options) => { opened.push(options); } },
     action: { onClicked: { addListener: (fn) => { listeners.action = fn; } } },
     tabs: { query: async () => [{ id: 7, url }], sendMessage: async () => {}, onUpdated: { addListener: (fn) => { listeners.updated = fn; } }, onRemoved: { addListener: (fn) => { listeners.removed = fn; } }, onActivated: { addListener: (fn) => { listeners.activated = fn; } } },
@@ -104,7 +104,7 @@ test('a superseded scan request cannot invalidate the newer successful scan', as
   const notices = [];
   const scan = inventory();
   const chrome = {
-    runtime: { id: 'test-extension', getURL: (suffix) => `chrome-extension://test-extension/${suffix}`, onMessage: { addListener: (fn) => { listener = fn; } }, sendMessage: async (message) => { notices.push(message); } },
+    runtime: { id: 'test-extension', getURL: (suffix) => `chrome-extension://test-extension/${suffix}`, onConnect: { addListener() {} }, onMessage: { addListener: (fn) => { listener = fn; } }, sendMessage: async (message) => { notices.push(message); } },
     sidePanel: { setPanelBehavior: async () => {}, open: async () => {} },
     action: { onClicked: { addListener() {} } },
     tabs: {

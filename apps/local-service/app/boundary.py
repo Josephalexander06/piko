@@ -1,6 +1,7 @@
 """Bound requests before JSON parsing; never echo request content in errors."""
 
 import asyncio
+from fastapi import HTTPException
 
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -59,6 +60,36 @@ class RequestBoundary:
             return
         if len(length) > 10:
             await reject(413, "body_too_large")
+            return
+        if scope["path"] == "/v1/transcribe" and scope["method"] == "POST":
+            # Authenticate before receiving or parsing potentially large media.
+            try:
+                scope["app"].state.pairing.authenticate(headers.get(b"authorization", b"").decode("latin1"), effective_origin)
+            except HTTPException as error:
+                await reject(error.status_code, error.detail)
+                return
+            maximum = scope["app"].state.transcriber.config.max_bytes + 16384
+            if int(length) > maximum:
+                await reject(413, "audio-too-large")
+                return
+            count = 0
+            finished = False
+            deadline = asyncio.get_running_loop().time() + 15
+            async def audio_receive():
+                nonlocal count, finished
+                if finished:
+                    return await receive()
+                try:
+                    message = await asyncio.wait_for(receive(), timeout=max(0, deadline - asyncio.get_running_loop().time()))
+                except asyncio.TimeoutError:
+                    raise HTTPException(408, "invalid-audio") from None
+                count += len(message.get("body", b""))
+                if not message.get("more_body", False):
+                    finished = True
+                if count > maximum:
+                    raise HTTPException(413, "audio-too-large")
+                return message
+            await self.app(scope, audio_receive, safe_send)
             return
         if int(length) > MAX_BODY_BYTES:
             await reject(413, "body_too_large")

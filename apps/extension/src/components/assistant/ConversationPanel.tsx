@@ -30,7 +30,7 @@ export function ConversationPanel({ state, dispatch }: { state: AssistantState; 
       <Button type="submit" variant="secondary" className="min-h-10 w-full" disabled={!state.draftAnswer.trim()}>Add typed answer</Button>
     </form>
 
-    <VoiceControls />
+    <VoiceControls onAccept={text => dispatch({ type: 'ACCEPT_TRANSCRIPT', text })} />
     <p role="status" className="text-xs leading-5 text-muted-foreground">{provided} of {state.proposals.length} answers prepared.{missing.length > 0 && ` Still missing: ${missing.map((proposal) => proposal.label).join(', ')}.`}</p>
     <Button className="primary-action" disabled={!provided} onClick={() => dispatch({ type: 'OPEN_REVIEW' })}>Review proposed values<ArrowRight aria-hidden="true" /></Button>
   </section>

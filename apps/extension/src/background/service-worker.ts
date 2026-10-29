@@ -7,8 +7,18 @@ import { ApprovalCoordinator, fromPanel, type FillSession } from './approval-coo
 import { isFillPanelRequest } from '../features/filling/fill.validation'
 import { ConnectionManager } from './connection-manager'
 import { isConnectionRequest } from '../features/local-service/connection.validation'
+import { AudioTransfer } from './audio-transfer'
+import { VOICE_PORT } from '../features/voice-input/transcription.types'
 
 const connection = new ConnectionManager()
+let activeAudio: AudioTransfer | null = null
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== VOICE_PORT || !fromPanel(port.sender ?? {}) || activeAudio) { port.disconnect(); return }
+  const transfer = new AudioTransfer((reply) => { try { port.postMessage(reply) } catch { transfer.dispose() } }, (audio, signal) => connection.transcribeAudio(audio, signal), () => { if (activeAudio === transfer) activeAudio = null })
+  activeAudio = transfer
+  port.onMessage.addListener((message: unknown) => { void transfer.receive(message) })
+  port.onDisconnect.addListener(() => transfer.dispose())
+})
 
 // The automatic side-panel path can consume the action without granting
 // activeTab. An explicit action handler preserves the permission-grant gesture.

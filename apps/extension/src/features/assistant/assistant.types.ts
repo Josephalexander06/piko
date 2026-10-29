@@ -21,7 +21,7 @@ export interface AssistantMessage {
   id: string
   role: 'assistant' | 'user'
   content: string
-  source: 'demo' | 'user-provided'
+  source: 'demo' | 'user-provided' | 'voice-transcript'
 }
 
 export interface DemoForm {

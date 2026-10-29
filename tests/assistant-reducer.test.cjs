@@ -25,6 +25,13 @@ function loadTypeScript(filename) {
 const { assistantReducer: reduce, createInitialState, selectedProposals, hasValue } = loadTypeScript(
   path.resolve(__dirname, '../apps/extension/src/features/assistant/assistant.reducer.ts'),
 );
+test('accepted voice text enters conversation only and never changes proposals or approvals', () => {
+  const before = conversation(); const after = reduce(before, { type: 'ACCEPT_TRANSCRIPT', text: 'Edited synthetic voice answer.' });
+  assert.equal(after.messages.at(-2).content, 'Edited synthetic voice answer.');
+  assert.deepEqual(after.proposals, before.proposals); assert.deepEqual(after.approvedProposals, []); assert.equal(after.draftAnswer, before.draftAnswer);
+  assert.equal(reduce(createInitialState(), { type: 'ACCEPT_TRANSCRIPT', text: 'not in conversation' }).stage, 'idle');
+  assert.equal(reduce(before, { type: 'ACCEPT_TRANSCRIPT', text: ' ' }), before);
+});
 function conversation() {
   return ['LOAD_DEMO_FORM', 'FINISH_DEMO_INSPECTION', 'START_CONVERSATION']
     .reduce((state, type) => reduce(state, { type }), createInitialState());

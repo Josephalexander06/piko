@@ -74,6 +74,13 @@ export function assistantReducer(state: AssistantState, action: AssistantAction)
     case 'SET_ANSWER_FIELD':
       return state.stage === 'conversation' && state.proposals.some((proposal) => proposal.fieldId === action.fieldId)
         ? { ...state, answerFieldId: action.fieldId, draftAnswer: '', validationErrors: {} } : state
+    case 'ACCEPT_TRANSCRIPT': {
+      if (state.stage !== 'conversation' || typeof action.text !== 'string' || !action.text.trim() || action.text.length > 4096) return state
+      return { ...state, messages: [...state.messages,
+        { id: `message-${state.messages.length}`, role: 'user', content: action.text.trim(), source: 'voice-transcript' },
+        { id: `message-${state.messages.length + 1}`, role: 'assistant', content: 'Transcript added. Answer interpretation is not integrated yet; no fields were changed.', source: 'demo' }],
+      }
+    }
     case 'SET_DRAFT_ANSWER':
       return state.stage === 'conversation' ? { ...state, draftAnswer: action.value.slice(0, 1024), validationErrors: {} } : state
     case 'ADD_TEXT_ANSWER': {

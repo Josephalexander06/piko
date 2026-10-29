@@ -3,7 +3,8 @@ import { PlugZap } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PairingPanel } from './PairingPanel'
 import { connectionAction, type ConnectionAction } from './connection.service'
-import { initialConnection, type ConnectionError } from './connection.types'
+import { type ConnectionError } from './connection.types'
+import { publishConnection, useConnectionState } from './connection.store'
 
 const errors: Record<ConnectionError, string> = {
   'service-unavailable': 'The companion service is unavailable. Start it on 127.0.0.1:8765, then check again.',
@@ -20,7 +21,7 @@ const errors: Record<ConnectionError, string> = {
 }
 const titles = { disconnected: 'Local runtime not connected', available: 'Companion available · not paired', paired: 'Companion paired', expired: 'Companion session expired', unavailable: 'Companion unavailable' }
 export function RuntimeStatus() {
-  const [state, setState] = useState(initialConnection)
+  const state = useConnectionState()
   const [busy, setBusy] = useState(false)
   const inFlight = useRef(false)
   const mounted = useRef(false)
@@ -29,7 +30,7 @@ export function RuntimeStatus() {
     inFlight.current = true
     setBusy(true)
     const response = await connectionAction(action)
-    if (mounted.current) { setState(response.state); setBusy(false) }
+    if (mounted.current) { publishConnection(response.state); setBusy(false) }
     inFlight.current = false
   }, [])
   useEffect(() => {
@@ -48,7 +49,7 @@ export function RuntimeStatus() {
     <Alert role="status" aria-live="polite" className="border-emerald-950/10 bg-emerald-950/5">
       <PlugZap aria-hidden="true" className="size-4" />
       <AlertTitle>{titles[state.status]}</AlertTitle>
-      <AlertDescription className="text-xs leading-5">{busy ? 'Checking local connection…' : 'AI and voice are not integrated. Manual form filling works independently of this connection.'}</AlertDescription>
+      <AlertDescription className="text-xs leading-5">{busy ? 'Checking local connection…' : 'Local voice input requires a paired, configured companion. Answer interpretation and speech playback are not integrated.'}</AlertDescription>
     </Alert>
     {state.error && <p role="alert" className="text-xs leading-5 text-destructive">{errors[state.error]}</p>}
     <PairingPanel state={state} busy={busy} act={act} />

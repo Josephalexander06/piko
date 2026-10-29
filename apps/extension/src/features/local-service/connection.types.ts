@@ -3,7 +3,7 @@ export const SESSION_KEY = 'piko.localService.session.v1'
 export const REQUEST_TIMEOUT_MS = 3000
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000
 export type ConnectionError = 'service-unavailable' | 'timeout' | 'pairing-rejected' | 'rate-limited' | 'session-expired' | 'invalid-response' | 'unsupported-protocol' | 'unsupported-origin' | 'disconnect-unconfirmed' | 'busy' | 'storage-unavailable'
-export interface Capabilities { protocol_version: 1; inference: 'not_integrated'; transcription: 'not_integrated'; speech_synthesis: 'not_integrated' }
+export interface Capabilities { protocol_version: 1; inference: 'not_integrated'; transcription: 'not_integrated' | 'ready' | 'unavailable'; speech_synthesis: 'not_integrated' }
 export interface ConnectionState {
   status: 'disconnected' | 'available' | 'paired' | 'expired' | 'unavailable'
   checkedAt: number | null
