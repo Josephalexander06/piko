@@ -9,13 +9,23 @@ import { ConnectionManager } from './connection-manager'
 import { isConnectionRequest } from '../features/local-service/connection.validation'
 import { AudioTransfer } from './audio-transfer'
 import { VOICE_PORT } from '../features/voice-input/transcription.types'
+import { SPEECH_PORT } from '../features/voice-output/speech.types'
+import { SpeechTransfer } from './speech-transfer'
 import { eligibleMetadata, InterpretationError, isInterpretMessage, type InterpretMessage, type InterpretReply } from '../features/interpretation/interpretation.validation'
 import { hasKeys, isOpaqueId } from '../features/scanner/scanner.messages'
 
 const connection = new ConnectionManager()
 let activeAudio: AudioTransfer | null = null
+let activeSpeech: SpeechTransfer | null = null
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== VOICE_PORT || !fromPanel(port.sender ?? {}) || activeAudio) { port.disconnect(); return }
+  if (port.name === SPEECH_PORT && fromPanel(port.sender ?? {}) && !activeSpeech && !activeAudio) {
+    const transfer = new SpeechTransfer(reply => { try { port.postMessage(reply) } catch { transfer.dispose() } }, (text, signal) => connection.synthesizeSpeech(text, signal), () => { if (activeSpeech === transfer) activeSpeech = null }, () => { try { port.disconnect() } catch { /* Already closed. */ } })
+    activeSpeech = transfer
+    port.onMessage.addListener((message: unknown) => { void transfer.receive(message) })
+    port.onDisconnect.addListener(() => transfer.dispose())
+    return
+  }
+  if (port.name !== VOICE_PORT || !fromPanel(port.sender ?? {}) || activeAudio || activeSpeech) { port.disconnect(); return }
   const transfer = new AudioTransfer((reply) => { try { port.postMessage(reply) } catch { transfer.dispose() } }, (audio, signal) => connection.transcribeAudio(audio, signal), () => { if (activeAudio === transfer) activeAudio = null })
   activeAudio = transfer
   port.onMessage.addListener((message: unknown) => { void transfer.receive(message) })
@@ -158,6 +168,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
     return true
   }
   if (isConnectionRequest(message) && fromPanel(sender)) {
+    if (message.type === 'PIKO_SERVICE_DISCONNECT') activeSpeech?.dispose()
     void connection.handle(message).then(respond)
     return true
   }

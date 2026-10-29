@@ -1,5 +1,5 @@
 
-# Piko — Step 9 local Qwen interpretation
+# Piko — Step 10 local Piper speech
 
 A local-first Chrome extension with an explicitly activated form scanner,
 manual proposal review, one-use approval, verified form filling, and a separate
@@ -10,8 +10,10 @@ local Whisper.cpp transcription and structured Qwen interpretation through local
 Explicitly recorded audio becomes editable text. On a scanned form, **Interpret edited
 answer** sends only that reviewed text and eligible field metadata to the paired
 companion. Validated proposals appear in the editable review controls with no
-fields selected. Filling still requires separate exact-batch approval. Speech
-synthesis remains `not_integrated`. See the [Step 9 guide](docs/10-local-qwen-interpretation.md)
+fields selected. Filling still requires separate exact-batch approval. Opt-in Piper speech speaks
+short questions and status messages through the paired local companion, with
+visible text and coordinated microphone/playback. See the
+[Step 10 speech guide](docs/11-local-piper-speech.md) and [Step 9 guide](docs/10-local-qwen-interpretation.md)
 for setup, contracts, privacy boundaries and actual model benchmark results.
 
 ## Repository layout
@@ -124,6 +126,11 @@ For local interpretation, start Ollama with the installed `qwen3.5:2b` model,
 restart and pair the companion, inspect a form, edit an answer, and click
 **Interpret edited answer**. Inspect and interpretation remain separate actions.
 The model download is never automatic. See the [Step 9 guide](docs/10-local-qwen-interpretation.md).
+
+For local speech, install the configured Piper voice using the
+[Step 10 guide](docs/11-local-piper-speech.md), restart/pair the companion, then
+click **Enable spoken responses and test voice**. No voice assets download at
+startup, and speech remains optional.
 
 ## Verification
 

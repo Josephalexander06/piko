@@ -15,3 +15,11 @@ starlette==1.10.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 uvicorn==0.54.0
+# Step 10 Piper dependency closure (pinned without replacing existing dependencies).
+flatbuffers==25.12.19
+numpy==2.5.4
+onnxruntime==1.31.1
+packaging==26.3
+pathvalidate==3.3.1
+piper-tts==1.8.0
+protobuf==7.36.2

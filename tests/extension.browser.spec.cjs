@@ -140,7 +140,8 @@ test('conversation, typed fallback, editing and deselection lead to an accurate 
   await expect(result).toContainText('Edited Example');
   await expect(result).not.toContainText('Phone number');
   await expect(result).toContainText('No webpage has been modified');
-  await expect(panel.getByRole('textbox')).toHaveCount(0);
+  await expect(result.getByRole('textbox')).toHaveCount(0);
+  await expect(panel.getByLabel('Assistant message to speak')).toBeVisible();
   await expect(panel.getByText('Approval simulated · 0 values inserted', { exact: true })).toBeVisible();
   await panel.screenshot({ path: testInfo.outputPath('approval.png'), fullPage: true });
   await panel.getByRole('button', { name: 'Reset session' }).click();

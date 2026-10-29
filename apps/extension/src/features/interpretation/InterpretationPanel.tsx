@@ -1,3 +1,5 @@
+import { voiceSession } from '../voice-output/voice-session'
+import { speechPrompt } from '../voice-output/speech-prompts'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -35,9 +37,10 @@ export function InterpretationPanel({ scan, active, onProposals }: { scan: ScanR
   const [result, setResult] = useState<InterpretResponse | null>(null)
   const operation = useRef<AbortController | null>(null)
   const available = active && connection.status === 'paired'
-  useEffect(() => () => operation.current?.abort(), [])
-  useEffect(() => { if (!available) operation.current?.abort() }, [available])
+  useEffect(() => () => { operation.current?.abort(); voiceSession.stopSpeech() }, [])
+  useEffect(() => { if (!available) { operation.current?.abort(); voiceSession.stopSpeech() } }, [available])
   function edit(text: string) {
+    voiceSession.stopSpeech()
     operation.current?.abort(); operation.current = null
     setBusy(false); setTranscript(text); setResult(null); setError(''); onProposals(null)
   }
@@ -49,6 +52,7 @@ export function InterpretationPanel({ scan, active, onProposals }: { scan: ScanR
       const value = await interpretAnswers(interpretationRequest(scan, transcript), scan.tabId, controller.signal)
       if (operation.current !== controller || controller.signal.aborted) return
       setResult(value); onProposals(value)
+      void voiceSession.speak(speechPrompt(value, scan.inventory.forms.flatMap(form => form.fields)))
     } catch (cause) {
       if (operation.current === controller) setError(errors[cause instanceof InterpretationError ? cause.code : 'service-unavailable'])
     } finally { if (operation.current === controller) { setBusy(false); operation.current = null } }

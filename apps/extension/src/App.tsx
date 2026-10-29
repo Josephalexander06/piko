@@ -1,3 +1,5 @@
+import { voiceSession } from '@/features/voice-output/voice-session'
+import { VoiceOutputControls } from '@/features/voice-output/VoiceOutputControls'
 import { useEffect, useReducer, useRef } from 'react'
 import { ArrowLeft, ArrowRight, FlaskConical, RotateCcw, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -44,6 +46,7 @@ export default function App() {
 
   return <AppShell>
     <RuntimeStatus />
+    <VoiceOutputControls />
     <WorkflowProgress stage={state.stage} />
     <section aria-labelledby="screen-title" className="space-y-2">
       <p role="status" className="text-[11px] font-medium uppercase tracking-wider text-emerald-800">{copy.status}</p>
@@ -96,6 +99,6 @@ export default function App() {
     </>}
 
     {state.stage === 'error' && <Alert variant="destructive"><TriangleAlert aria-hidden="true" className="size-4" /><AlertTitle>Simulated demo error</AlertTitle><AlertDescription>{state.errorMessage}</AlertDescription></Alert>}
-    {state.stage !== 'idle' && <Button variant="ghost" className="min-h-10 w-full" onClick={() => dispatch({ type: 'RESET_SESSION' })}><RotateCcw aria-hidden="true" />Reset session</Button>}
+    {state.stage !== 'idle' && <Button variant="ghost" className="min-h-10 w-full" onClick={() => { voiceSession.reset(); dispatch({ type: 'RESET_SESSION' }) }}><RotateCcw aria-hidden="true" />Reset session</Button>}
   </AppShell>
 }

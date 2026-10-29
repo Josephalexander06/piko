@@ -6,8 +6,9 @@ session. The existing scanner and approval-gated filling engine remain
 independent. Step 8 adds authenticated local audio transcription; see the
 [voice guide](09-local-voice-input.md). Step 9 adds authenticated interpretation
 of explicitly submitted answers and eligible metadata; see the
-[Qwen guide](10-local-qwen-interpretation.md). Synthesis, telemetry and cloud-proxy
-endpoints remain absent.
+[Qwen guide](10-local-qwen-interpretation.md). Step 10 adds optional authenticated Piper synthesis; see the
+[speech guide](11-local-piper-speech.md). Telemetry and cloud-proxy endpoints
+remain absent.
 
 ## Start and pair
 
@@ -60,9 +61,10 @@ from the protocol version. API models reject extra keys and coerced types.
 | --- | --- | --- |
 | GET `/v1/health` | None; browser origins are still validated | Readiness, service version, `inference: local_ollama` |
 | POST `/v1/pair` | Correct unconsumed startup code + valid extension Origin | `protocol_version`, random `token`, Unix-second `expires_at` |
-| GET `/v1/capabilities` | Bearer token + exact paired Origin | Transcription: `ready` or `unavailable`; inference: `ready` or `unavailable`; speech synthesis: `not_integrated` |
+| GET `/v1/capabilities` | Bearer token + exact paired Origin | Transcription: `ready` or `unavailable`; inference: `ready` or `unavailable`; speech synthesis: `ready` or `unavailable` with safe detail |
 | POST `/v1/transcribe` | Bearer token + exact paired Origin | Step 8 bounded audio upload and local transcription |
 | POST `/v1/interpret` | Bearer token + exact paired Origin | Step 9 bounded metadata + edited answer; validated proposals only |
+| POST `/v1/synthesize` | Bearer token + exact paired Origin | Step 10 bounded plain assistant text; bounded WAV audio |
 | GET `/v1/ping` | Bearer token + exact paired Origin | `protocol_version: 1`, `status: ok` |
 | DELETE `/v1/session` | Bearer token + exact paired Origin | Revoke token, `status: disconnected` |
 
@@ -88,7 +90,8 @@ security headers, query strings, unexpected request bodies, oversized headers,
 and unsupported media types. Connection routes allow at most 512 body bytes
 (including streamed bodies), with a three-second receive deadline. Step 8's
 authenticated audio route has its own bounded multipart policy. Step 9
-interpretation accepts at most 128 KiB of authenticated JSON. Validation errors never
+interpretation accepts at most 128 KiB of authenticated JSON; synthesis accepts
+at most 8 KiB. Validation errors never
 echo submitted values. Responses are `no-store`. Model, interactive documentation,
 and OpenAPI HTTP routes are absent.
 

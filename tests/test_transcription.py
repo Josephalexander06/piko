@@ -15,6 +15,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/local-service"))
 from httpx import ASGITransport, AsyncClient
 from app.main import create_app
+from app.services.piper_service import PiperService, PiperConfig
+
+def no_speech():
+    return PiperService(PiperConfig(voice_path=Path(__file__).parent / "fixtures/missing-voice.onnx"))
+
 from app.transcription import Transcriber, Transcript, VoiceError, run_process
 from app.voice_config import VoiceConfig, MAX_AUDIO_BYTES
 
@@ -174,7 +179,7 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
                     raise VoiceError("empty-audio")
                 return Transcript(status="ok", text="Synthetic fixture transcript", durationMs=1000, processingMs=1)
         announcements = []
-        self.app = create_app(announce=announcements.append, transcriber=FixtureTranscriber())
+        self.app = create_app(announce=announcements.append, transcriber=FixtureTranscriber(), piper_service=no_speech())
         self.lifespan = self.app.router.lifespan_context(self.app)
         await self.lifespan.__aenter__()
         self.addAsyncCleanup(self.lifespan.__aexit__, None, None, None)
