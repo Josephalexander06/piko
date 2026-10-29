@@ -49,7 +49,7 @@ export function RuntimeStatus() {
     <Alert role="status" aria-live="polite" className="border-emerald-950/10 bg-emerald-950/5">
       <PlugZap aria-hidden="true" className="size-4" />
       <AlertTitle>{titles[state.status]}</AlertTitle>
-      <AlertDescription className="text-xs leading-5">{busy ? 'Checking local connection…' : 'Local voice input requires a paired, configured companion. Answer interpretation and speech playback are not integrated.'}</AlertDescription>
+      <AlertDescription className="text-xs leading-5">{busy ? 'Checking local connection…' : 'Voice input and answer interpretation use your paired local companion. Speech playback is not integrated.'}</AlertDescription>
     </Alert>
     {state.error && <p role="alert" className="text-xs leading-5 text-destructive">{errors[state.error]}</p>}
     <PairingPanel state={state} busy={busy} act={act} />

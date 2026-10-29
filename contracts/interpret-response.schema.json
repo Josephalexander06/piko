@@ -1,132 +1,245 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://piko.local/schemas/interpret-response.schema.json",
-  "title": "InterpretResponse",
-  "description": "Validated response returned by the Companion Service containing structured proposals and clarification requests. Never contains executable code, selectors, or insertion authority.",
-  "type": "object",
-  "required": [
-    "requestId",
-    "sessionId",
-    "formInstanceId",
-    "proposedUpdates",
-    "clarifications"
-  ],
+  "$defs": {
+    "CheckboxTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "checkbox",
+          "title": "Kind",
+          "type": "string"
+        },
+        "checked": {
+          "title": "Checked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "checked"
+      ],
+      "title": "CheckboxTarget",
+      "type": "object"
+    },
+    "Clarification": {
+      "additionalProperties": false,
+      "properties": {
+        "question": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "targetFieldIds": {
+          "items": {
+            "maxLength": 64,
+            "pattern": "^[a-z]+_[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "title": "Targetfieldids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "question",
+        "targetFieldIds"
+      ],
+      "title": "Clarification",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "transcript",
+            "fact"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "factId": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[a-z]+_[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Factid"
+        },
+        "quote": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Quote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "factId",
+        "quote"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "MissingField": {
+      "additionalProperties": false,
+      "properties": {
+        "fieldId": {
+          "maxLength": 64,
+          "pattern": "^[a-z]+_[a-f0-9]{32}$",
+          "title": "Fieldid",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fieldId",
+        "question"
+      ],
+      "title": "MissingField",
+      "type": "object"
+    },
+    "OptionTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "select",
+            "radio"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "optionId": {
+          "maxLength": 64,
+          "pattern": "^[a-z]+_[a-f0-9]{32}$",
+          "title": "Optionid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "optionId"
+      ],
+      "title": "OptionTarget",
+      "type": "object"
+    },
+    "TextTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "text",
+            "email",
+            "tel",
+            "number",
+            "date",
+            "textarea"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 1024,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "TextTarget",
+      "type": "object"
+    },
+    "Update": {
+      "additionalProperties": false,
+      "properties": {
+        "fieldId": {
+          "maxLength": 64,
+          "pattern": "^[a-z]+_[a-f0-9]{32}$",
+          "title": "Fieldid",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextTarget"
+            },
+            {
+              "$ref": "#/$defs/OptionTarget"
+            },
+            {
+              "$ref": "#/$defs/CheckboxTarget"
+            }
+          ],
+          "title": "Target"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        }
+      },
+      "required": [
+        "fieldId",
+        "target",
+        "evidence"
+      ],
+      "title": "Update",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
-    "requestId": {
-      "type": "string",
-      "description": "Matches the requestId of the initiating InterpretRequest.",
-      "pattern": "^[a-zA-Z0-9_-]{1,64}$",
-      "minLength": 1,
-      "maxLength": 64
-    },
-    "sessionId": {
-      "type": "string",
-      "description": "Active session identifier.",
-      "pattern": "^[a-zA-Z0-9_-]{1,64}$",
-      "minLength": 1,
-      "maxLength": 64
-    },
-    "formInstanceId": {
-      "type": "string",
-      "description": "Identifier of the target form snapshot.",
-      "pattern": "^[a-zA-Z0-9_-]{1,64}$",
-      "minLength": 1,
-      "maxLength": 64
-    },
-    "proposedUpdates": {
-      "type": "array",
-      "description": "Proposed field value updates derived from the transcript. Field IDs must correspond strictly to validated fields from the request.",
-      "maxItems": 100,
+    "updates": {
       "items": {
-        "type": "object",
-        "required": [
-          "fieldId",
-          "value",
-          "confidence"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "fieldId": {
-            "type": "string",
-            "description": "Opaque field ID from the request. Selectors, scripts, and unknown IDs are rejected.",
-            "pattern": "^[a-zA-Z0-9_-]{1,64}$",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "value": {
-            "description": "Proposed value. For checkboxes, this must be a boolean. For select/radio, this must be an exact match to an allowed option value.",
-            "type": ["string", "boolean"],
-            "maxLength": 1024
-          },
-          "confidence": {
-            "type": "number",
-            "description": "Estimated confidence of the model extraction between 0.0 and 1.0.",
-            "minimum": 0.0,
-            "maximum": 1.0
-          },
-          "reasoning": {
-            "type": "string",
-            "description": "Brief human-readable rationale for the proposed assignment. Must not contain executable code or script tags.",
-            "minLength": 1,
-            "maxLength": 256
-          }
-        }
-      }
+        "$ref": "#/$defs/Update"
+      },
+      "maxItems": 100,
+      "title": "Updates",
+      "type": "array"
     },
     "clarifications": {
-      "type": "array",
-      "description": "Questions synthesized when user input is ambiguous or requires user choice among discrete options.",
+      "items": {
+        "$ref": "#/$defs/Clarification"
+      },
       "maxItems": 10,
-      "items": {
-        "type": "object",
-        "required": [
-          "question",
-          "targetFieldIds"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "question": {
-            "type": "string",
-            "description": "Natural language question to be synthesized by Piper TTS and presented in the UI.",
-            "minLength": 1,
-            "maxLength": 500
-          },
-          "targetFieldIds": {
-            "type": "array",
-            "description": "Opaque field IDs to which this clarification pertains.",
-            "minItems": 1,
-            "maxItems": 10,
-            "items": {
-              "type": "string",
-              "pattern": "^[a-zA-Z0-9_-]{1,64}$",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          "suggestedOptions": {
-            "type": "array",
-            "description": "Optional list of discrete options to present to the user.",
-            "maxItems": 20,
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          }
-        }
-      }
+      "title": "Clarifications",
+      "type": "array"
     },
-    "unmatchedFacts": {
-      "type": "array",
-      "description": "User-supplied facts detected in the transcript that could not be mapped to any discovered field.",
-      "maxItems": 20,
+    "scanId": {
+      "maxLength": 64,
+      "pattern": "^[a-z]+_[a-f0-9]{32}$",
+      "title": "Scanid",
+      "type": "string"
+    },
+    "missingFields": {
       "items": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256
-      }
+        "$ref": "#/$defs/MissingField"
+      },
+      "maxItems": 100,
+      "title": "Missingfields",
+      "type": "array"
     }
-  }
+  },
+  "required": [
+    "updates",
+    "clarifications",
+    "scanId",
+    "missingFields"
+  ],
+  "title": "InterpretResponse",
+  "type": "object",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://piko.local/schemas/interpret-response.schema.json"
 }
-

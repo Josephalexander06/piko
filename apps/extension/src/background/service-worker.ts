@@ -9,6 +9,8 @@ import { ConnectionManager } from './connection-manager'
 import { isConnectionRequest } from '../features/local-service/connection.validation'
 import { AudioTransfer } from './audio-transfer'
 import { VOICE_PORT } from '../features/voice-input/transcription.types'
+import { eligibleMetadata, InterpretationError, isInterpretMessage, type InterpretMessage, type InterpretReply } from '../features/interpretation/interpretation.validation'
+import { hasKeys, isOpaqueId } from '../features/scanner/scanner.messages'
 
 const connection = new ConnectionManager()
 let activeAudio: AudioTransfer | null = null
@@ -32,11 +34,38 @@ type Session = FillSession
 const sessions = new Map<number, Session>()
 const approvals = new ApprovalCoordinator(sessions)
 const pending = new Map<number, string>()
+const interpreting = new Map<string, { tabId: number; controller: AbortController }>()
+
+async function interpret(message: InterpretMessage): Promise<InterpretReply> {
+  const controller = new AbortController()
+  const session = sessions.get(message.tabId)
+  try {
+    if (!session || session.scanId !== message.payload.scanId || message.payload.knownFacts.length ||
+        JSON.stringify(message.payload.fields) !== JSON.stringify(eligibleMetadata(session.inventory.forms.flatMap(form => form.fields)))) throw new InterpretationError('stale-scan')
+    if (interpreting.has(message.requestId)) throw new InterpretationError('interpretation-busy')
+    interpreting.set(message.requestId, { tabId: message.tabId, controller })
+    const current = async () => {
+      if (controller.signal.aborted || sessions.get(message.tabId) !== session) throw new InterpretationError('stale-scan')
+      const state: unknown = await chrome.tabs.sendMessage(message.tabId, { type: 'PIKO_SCAN_CURRENT', scanId: session.scanId, documentId: session.documentId }, { documentId: session.chromeDocumentId })
+      const tab = await chrome.tabs.get(message.tabId)
+      if (!isRecord(state) || state.current !== true || !tab.active || sessions.get(message.tabId) !== session) throw new InterpretationError('stale-scan')
+    }
+    await current()
+    const result = await connection.interpret(message.payload, controller.signal)
+    await current()
+    return { ok: true, requestId: message.requestId, result }
+  } catch (error) {
+    return { ok: false, requestId: message.requestId, error: error instanceof InterpretationError ? error.code : 'stale-scan' }
+  } finally {
+    if (interpreting.get(message.requestId)?.controller === controller) interpreting.delete(message.requestId)
+  }
+}
 
 function release(tabId: number, session: Session) {
   void chrome.tabs.sendMessage(tabId, { type: 'PIKO_SCAN_RELEASE', scanId: session.scanId }, { documentId: session.chromeDocumentId }).catch(() => {})
 }
 function invalidate(tabId: number, reason: InvalidationReason, releaseReferences = true) {
+  for (const request of interpreting.values()) if (request.tabId === tabId) request.controller.abort()
   approvals.invalidate(tabId)
   pending.delete(tabId)
   const session = sessions.get(tabId)
@@ -119,6 +148,15 @@ async function inspect(request: InspectRequest): Promise<InspectResponse> {
   }
 }
 chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
+  if (fromPanel(sender) && isRecord(message) && message.type === 'PIKO_INTERPRET_CANCEL' && hasKeys(message, ['type', 'requestId']) && isOpaqueId(message.requestId)) {
+    interpreting.get(message.requestId)?.controller.abort()
+    respond({ cancelled: true })
+    return
+  }
+  if (isInterpretMessage(message) && fromPanel(sender)) {
+    void interpret(message).then(respond)
+    return true
+  }
   if (isConnectionRequest(message) && fromPanel(sender)) {
     void connection.handle(message).then(respond)
     return true

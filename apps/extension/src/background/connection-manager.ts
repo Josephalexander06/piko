@@ -1,3 +1,5 @@
+import { InterpretationError, interpretationErrors, isInterpretResponse } from '../features/interpretation/interpretation.validation'
+import type { InterpretRequest, InterpretResponse } from '../features/interpretation/interpretation.generated'
 import { hasKeys, isRecord } from '../features/scanner/scanner.messages'
 import { initialConnection, REQUEST_TIMEOUT_MS, SERVICE_ORIGIN, SESSION_KEY, SESSION_TTL_MS } from '../features/local-service/connection.types'
 import type { ConnectionError, ConnectionRequest, ConnectionResponse, ConnectionState } from '../features/local-service/connection.types'
@@ -13,6 +15,7 @@ export class ConnectionManager {
   private state: ConnectionState = { ...initialConnection }
   private busy = false
   private initialized = false
+  private interpretationController: AbortController | null = null
   private audioController: AbortController | null = null
   constructor(private readonly http: typeof fetch = globalThis.fetch.bind(globalThis), private readonly now = Date.now, private readonly timeoutMs = REQUEST_TIMEOUT_MS) {}
 
@@ -91,6 +94,65 @@ export class ConnectionManager {
     }
   }
 
+  async interpret(payload: InterpretRequest, signal: AbortSignal): Promise<InterpretResponse> {
+    if (this.interpretationController) throw new InterpretationError('interpretation-busy')
+    const controller = new AbortController()
+    this.interpretationController = controller
+    const abort = () => controller.abort()
+    signal.addEventListener('abort', abort, { once: true })
+    const timer = setTimeout(abort, 125_000)
+    try {
+      if (signal.aborted) throw new InterpretationError('request-cancelled')
+      await this.prepare()
+      const session = await this.saved()
+      if (!session || session.pendingRevocation || this.now() >= session.expiresAt) throw new InterpretationError('session-expired')
+      const body = JSON.stringify(payload)
+      if (new TextEncoder().encode(body).length > 131072) throw new InterpretationError('body_too_large')
+      const response = await this.http(`${SERVICE_ORIGIN}/v1/interpret`, {
+        method: 'POST', body, headers: { Authorization: `Bearer ${session.token}`, 'X-Piko-Extension-Origin': session.origin, 'Content-Type': 'application/json' },
+        signal: controller.signal, cache: 'no-store', credentials: 'omit', redirect: 'error', mode: 'cors',
+      })
+      if (response.status === 401 || response.status === 403) {
+        await this.clear()
+        this.state = { ...initialConnection, status: 'expired', error: 'session-expired' }
+        throw new InterpretationError('session-expired')
+      }
+      if (!response.body || response.headers.get('content-type')?.split(';')[0] !== 'application/json') throw new InterpretationError('invalid-response')
+      const reader = response.body.getReader()
+      const chunks: Uint8Array[] = []
+      let size = 0
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          size += value.length
+          if (size > 131072) { await reader.cancel(); throw new InterpretationError('invalid-response') }
+          chunks.push(value)
+        }
+      } finally { reader.releaseLock() }
+      const bytes = new Uint8Array(size)
+      let offset = 0
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
+      let value: unknown
+      try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch { throw new InterpretationError('invalid-response') }
+      if (!response.ok) {
+        if (isRecord(value) && hasKeys(value, ['error']) && (interpretationErrors as readonly unknown[]).includes(value.error)) throw new InterpretationError(value.error as InterpretationError['code'])
+        throw new InterpretationError('invalid-response')
+      }
+      if (!isInterpretResponse(value, payload)) throw new InterpretationError('invalid-response')
+      const current = await this.saved()
+      if (!current || current.token !== session.token || current.pendingRevocation || this.now() >= current.expiresAt) throw new InterpretationError('session-expired')
+      if (controller.signal.aborted) throw new InterpretationError('request-cancelled')
+      return value
+    } catch (error) {
+      if (error instanceof InterpretationError) throw error
+      throw new InterpretationError(controller.signal.aborted ? signal.aborted ? 'request-cancelled' : 'interpretation-timeout' : 'service-unavailable')
+    } finally {
+      clearTimeout(timer); signal.removeEventListener('abort', abort)
+      if (this.interpretationController === controller) this.interpretationController = null
+    }
+  }
+
   private async request(path: '/health' | '/pair' | '/ping' | '/capabilities' | '/session', method: 'GET' | 'POST' | 'DELETE' = 'GET', token?: string, code?: string): Promise<Record<string, unknown>> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.timeoutMs)
@@ -164,7 +226,7 @@ export class ConnectionManager {
     this.state = { ...initialConnection }
   }
   async handle(request: ConnectionRequest): Promise<ConnectionResponse> {
-    if (request.type === 'PIKO_SERVICE_DISCONNECT') this.audioController?.abort()
+    if (request.type === 'PIKO_SERVICE_DISCONNECT') { this.audioController?.abort(); this.interpretationController?.abort() }
     if (this.busy) return { requestId: request.requestId, ok: false, state: { ...initialConnection, error: 'busy' } }
     this.busy = true
     try {
@@ -185,7 +247,7 @@ export class ConnectionManager {
           break
         case 'PIKO_SERVICE_HEALTH': {
           const health = await this.request('/health')
-          if (!hasKeys(health, ['status', 'service', 'version', 'inference', 'protocol_version']) || health.status !== 'ok' || health.service !== 'local-voice-form-assistant' || typeof health.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(health.version) || health.inference !== 'not_integrated') failed('invalid-response')
+          if (!hasKeys(health, ['status', 'service', 'version', 'inference', 'protocol_version']) || health.status !== 'ok' || health.service !== 'local-voice-form-assistant' || typeof health.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(health.version) || !['not_integrated', 'local_ollama'].includes(String(health.inference))) failed('invalid-response')
           this.state = { ...initialConnection, status: 'available', checkedAt: this.now() }
           if (session) await this.verify(session)
           break
