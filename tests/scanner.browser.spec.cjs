@@ -102,8 +102,8 @@ function fields(response) { return response.result.inventory.forms.flatMap((form
 
 test('production build requires an activeTab grant and rejects restricted pages without claiming success', async () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(production, 'manifest.json'), 'utf8'));
-  expect(manifest.permissions).toEqual(['sidePanel', 'activeTab', 'scripting']);
-  expect(manifest.host_permissions).toBeUndefined(); expect(manifest.content_scripts).toBeUndefined();
+  expect(manifest.permissions).toEqual(['sidePanel', 'activeTab', 'scripting', 'storage']);
+  expect(manifest.host_permissions).toEqual(['http://127.0.0.1:8765/*']); expect(manifest.content_scripts).toBeUndefined();
   await launch(false);
   await panel.getByRole('button', { name: 'Inspect this page', exact: true }).click();
   await expect(panel.getByText('Page could not be inspected', { exact: true })).toBeVisible();

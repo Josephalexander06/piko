@@ -11,7 +11,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <footer className="mt-auto space-y-3 pt-2">
       <Separator />
       <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><LockKeyhole aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />Drafts and approvals stay in temporary extension memory. Approved values are shared with the destination page.</p>
-      <p className="text-[11px] text-muted-foreground">Piko v{pkg.version} · Step 6 · Inspect, review, approve, and verify</p>
+      <p className="text-[11px] text-muted-foreground">Piko v{pkg.version} · Step 7 · Local companion pairing</p>
 
     </footer>
   </main>

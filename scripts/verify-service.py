@@ -11,6 +11,7 @@ expected = {
     "service": "local-voice-form-assistant",
     "version": "0.1.0",
     "inference": "not_integrated",
+    "protocol_version": 1,
 }
 
 parser = argparse.ArgumentParser(description=__doc__)

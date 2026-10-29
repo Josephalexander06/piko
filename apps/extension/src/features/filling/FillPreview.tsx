@@ -59,7 +59,7 @@ export function FillPreview({ scan, active }: { scan: ScanResult; active: boolea
   }
   return <section aria-label="Manual form filling" className="space-y-3 border-t pt-4">
     <h3 className="text-sm font-semibold">Prepare manual answers</h3>
-    <p className="text-xs leading-5 text-muted-foreground">Enter synthetic test values, include specific fields, then review. Answers stay in temporary extension memory. AI and the local service are disconnected.</p>
+    <p className="text-xs leading-5 text-muted-foreground">Enter synthetic test values, include specific fields, then review. Answers stay in temporary extension memory and never go to the companion service. AI is not integrated.</p>
     <fieldset disabled={!active || busy} className="min-w-0 space-y-4">{fields.map((field) => {
       const draft = drafts[field.fieldId] ?? { selected: false, text: '', overwrite: false }
       const id = `proposal-${field.fieldId}`

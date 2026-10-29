@@ -1,12 +1,13 @@
 
-# Piko — Step 6 permission-gated form filling
+# Piko — Step 7 authenticated local companion
 
 A local-first Chrome extension with an explicitly activated form scanner,
 manual proposal review, one-use approval, verified form filling, and a separate
 synthetic conversation/review demo. The independent
-Python companion service exposes
-`GET http://127.0.0.1:8765/v1/health`. AI inference, audio, pairing,
-and extension-to-service communication are deferred.
+Python companion service supports health checks, temporary pairing, and authenticated
+capability and connectivity checks at `http://127.0.0.1:8765`. Inference,
+transcription, and speech synthesis explicitly report `not_integrated`.
+No form answers, page metadata, transcripts, or audio are sent to the service.
 
 ## Repository layout
 
@@ -60,7 +61,7 @@ limitations, and the test commands.
 The scanner and UI demo run without the Python service. See the
 [Step 4 UI guide](docs/05-extension-ui.md) for state transitions and verification.
 
-To run the separate health API, start a second terminal (Linux/macOS):
+To run the companion API, start a second terminal (Linux/macOS):
 
 ```bash
 cd apps/local-service
@@ -79,9 +80,16 @@ py -m venv .venv
 ```
 
 No environment activation is needed. `python -m app` binds to **127.0.0.1:8765**
-with reload enabled and access logging disabled. Install `requirements.txt`
+with reload, access logging, and proxy-header interpretation disabled. Install `requirements.txt`
 instead if service tests are not needed. The explicit dependencies avoid the
 telemetry and cloud CLI packages pulled in by current `fastapi[standard]`.
+
+In the side panel, expand **Local service connection**, choose **Check service**,
+and enter the 16-character code printed in that terminal. Choose **Pair extension**.
+Codes expire after five minutes and work once. Sessions last at most 12 hours.
+**Disconnect service** revokes the token; restart the service for another code.
+See the [Step 7 connection guide](docs/08-local-service-connection.md) for the API,
+permissions, restart behavior, limitations, and actual Chrome tests.
 
 From the repository root, verify the running API:
 
@@ -96,7 +104,8 @@ On Windows, use `py scripts/verify-service.py`. The expected response is:
   "status": "ok",
   "service": "local-voice-form-assistant",
   "version": "0.1.0",
-  "inference": "not_integrated"
+  "inference": "not_integrated",
+  "protocol_version": 1
 }
 ```
 
@@ -124,12 +133,13 @@ troubleshooting. See [the product specification](docs/01-product-spec.md),
 [threat model](docs/02-privacy-threat-model.md), and
 [acceptance tests](docs/03-acceptance-tests.md) for later-phase requirements.
 
-The production extension requests `sidePanel`, `activeTab`, and `scripting`,
-bundles its assets locally, and has no persistent website permissions or service
-requests. Its scanner is injected into the top frame only after inspection is
-requested on an explicitly activated tab. The health
-API has no pairing or CORS bridge and exposes no inference operations. Interactive
-API documentation is disabled to avoid loading public CDN assets.
+The production extension requests `sidePanel`, `activeTab`, `scripting`, and
+`storage`, plus the loopback service host. Its fixed worker-only HTTP client and
+CSP restrict service requests to `127.0.0.1:8765`. Session credentials use
+`chrome.storage.session`; they never go to the panel, content scripts, or
+persistent storage. The scanner still requires an explicit toolbar activation
+on ordinary websites. The API enforces extension-origin validation and bearer
+authentication independently of CORS. Model and documentation routes are absent.
 
 The original plan below and the frozen Step 2 documents describe the future MVP.
 Their `/health` and `/api/v1/*` routes and model-install instructions do not

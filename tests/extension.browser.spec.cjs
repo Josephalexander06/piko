@@ -11,8 +11,8 @@ let network;
 test.beforeEach(async () => {
   const extensionPath = path.resolve(__dirname, '../apps/extension/dist');
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8'));
-  expect(manifest.permissions).toEqual(['sidePanel', 'activeTab', 'scripting']);
-  expect(manifest.host_permissions).toBeUndefined();
+  expect(manifest.permissions).toEqual(['sidePanel', 'activeTab', 'scripting', 'storage']);
+  expect(manifest.host_permissions).toEqual(['http://127.0.0.1:8765/*']);
   expect(manifest.content_scripts).toBeUndefined();
   context = await chromium.launchPersistentContext('', {
     channel: 'chromium',

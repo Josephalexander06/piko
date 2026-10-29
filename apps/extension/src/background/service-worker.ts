@@ -5,6 +5,10 @@ import type { InspectRequest, InspectResponse } from '../features/scanner/scanne
 import type { InvalidationReason, ScanError, ScanInventory } from '../features/scanner/scanner.types'
 import { ApprovalCoordinator, fromPanel, type FillSession } from './approval-coordinator'
 import { isFillPanelRequest } from '../features/filling/fill.validation'
+import { ConnectionManager } from './connection-manager'
+import { isConnectionRequest } from '../features/local-service/connection.validation'
+
+const connection = new ConnectionManager()
 
 // The automatic side-panel path can consume the action without granting
 // activeTab. An explicit action handler preserves the permission-grant gesture.
@@ -105,6 +109,10 @@ async function inspect(request: InspectRequest): Promise<InspectResponse> {
   }
 }
 chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
+  if (isConnectionRequest(message) && fromPanel(sender)) {
+    void connection.handle(message).then(respond)
+    return true
+  }
   if (isFillPanelRequest(message) && fromPanel(sender)) {
     void approvals.handle(message).then(respond)
     return true
