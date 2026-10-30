@@ -75,7 +75,7 @@ class RequestBoundary:
                 return message
             await self.app(scope, audio_receive, safe_send)
             return
-        interpretation = scope["path"] == "/v1/interpret" and scope["method"] == "POST"
+        interpretation = scope["path"] in ("/v1/interpret", "/v1/summary") and scope["method"] == "POST"
         synthesis = scope["path"] == "/v1/synthesize" and scope["method"] == "POST"
         maximum = 131072 if interpretation else 8192 if synthesis else MAX_BODY_BYTES
         if int(length) > maximum:

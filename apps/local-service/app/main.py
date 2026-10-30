@@ -23,7 +23,8 @@ from .transcription import Transcriber, Transcript, VoiceError
 from .services.ollama_client import OllamaClient, InterpretationError
 from .services.interpretation_service import InterpretationService
 from .schemas.interpret import InterpretRequest, InterpretResponse
-from .api.interpret import interpret_request
+from .api.interpret import interpret_request, inference_request
+from .schemas.summary import SummaryRequest, SummaryResponse
 from .services.piper_service import PiperService, SpeechError
 from .schemas.synthesize import SynthesizeRequest
 from .api.synthesize import synthesize_request
@@ -150,6 +151,10 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
     @application.post("/v1/interpret", response_model=InterpretResponse)
     async def interpret(payload: InterpretRequest, request: Request, _session: Annotated[Session, Depends(authenticate)]) -> InterpretResponse:
         return await interpret_request(payload, request, authenticate)
+
+    @application.post('/v1/summary', response_model=SummaryResponse)
+    async def summarize(payload: SummaryRequest, request: Request, _session: Annotated[Session, Depends(authenticate)]) -> SummaryResponse:
+        return await inference_request(payload, request, authenticate, request.app.state.interpreter.summarize)
 
     @application.post("/v1/synthesize")
     async def synthesize(payload: SynthesizeRequest, request: Request, _session: Annotated[Session, Depends(authenticate)]) -> Response:

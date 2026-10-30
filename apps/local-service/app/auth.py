@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 ORIGIN_PATTERN = r".*"
 PAIRING_TTL = 365 * 24 * 60 * 60
-SESSION_TTL = 365 * 24 * 60 * 60
+SESSION_TTL = 12 * 60 * 60
 ATTEMPT_WINDOW = 60
 MAX_FAILURES = 100000
 

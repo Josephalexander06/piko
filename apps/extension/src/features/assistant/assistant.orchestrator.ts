@@ -82,19 +82,21 @@ export class AssistantOrchestrator {
   private speak(text: string) { void this.deps.speak(text).catch(() => {}) }
   transcript(text: string) { if (this.state.stage === 'filling' || this.state.stage === 'stale') return; this.cancel(); this.send({ type: 'TRANSCRIPT', text }) }
   discard() { this.cancel(); this.send({ type: 'DISCARD' }) }
+  revise(fieldId: string) { this.cancel(); this.send({ type: 'REVISE', fieldId }) }
   recordingStage(stage: string) { this.send({ type: 'TRANSCRIBING', busy: stage === 'processing' }) }
   edit(fieldId: string, change: Partial<Pick<WorkflowDraft, 'text' | 'selected' | 'overwrite'>>) {
     if (this.state.stage === 'filling') return
     this.cancel(); this.send({ type: 'EDIT', fieldId, change })
   }
   skip(fieldId: string) { this.cancel(); this.send({ type: 'SKIP', fieldId }); this.askNext() }
-  async interpret() {
+  async interpret(focusFieldId?: string) {
     if (!['collecting', 'review', 'error'].includes(this.state.stage) || !liveContext(this.state, this.deps.now()) || !this.state.transcript.trim()) return
     this.cancel()
-    const token = this.token(), context = this.context(token), controller = new AbortController()
+    const token = this.token(), context = { ...this.context(token), ...(focusFieldId ? { focusFieldId } : {}) }, controller = new AbortController()
     this.operation = controller
     const request = interpretationRequest(this.state.scan!, this.state.transcript)
-    request.knownFacts = relevantFacts(eligibleFields(this.state), this.state.session)
+    if (focusFieldId) request.fields = request.fields.filter(field => field.fieldId === focusFieldId)
+    request.knownFacts = relevantFacts(eligibleFields(this.state).filter(field => !focusFieldId || field.fieldId === focusFieldId), this.state.session)
     this.send({ type: 'INTERPRET_START', token })
     try {
       const stored = await this.deps.status()

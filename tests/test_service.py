@@ -81,7 +81,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 426)
 
     async def test_only_intended_service_routes_and_no_remote_documentation(self):
-        self.assertEqual(set(self.app.openapi()["paths"]), {"/v1/health", "/v1/pair", "/v1/ping", "/v1/capabilities", "/v1/session", "/v1/transcribe", "/v1/interpret", "/v1/synthesize"})
+        self.assertEqual(set(self.app.openapi()["paths"]), {"/v1/health", "/v1/pair", "/v1/ping", "/v1/capabilities", "/v1/session", "/v1/transcribe", "/v1/interpret", "/v1/synthesize", "/v1/summary"})
         for route in ("/interpret", "/api/v1/interpret", "/transcribe", "/synthesize", "/forms", "/docs", "/redoc", "/openapi.json"):
             self.assertEqual((await self.client.get(route)).status_code, 404)
 

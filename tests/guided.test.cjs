@@ -1,0 +1,41 @@
+const assert=require('node:assert/strict'),path=require('node:path'),{test}=require('node:test');
+const load=require('./helpers/load-typescript.cjs')(),root=path.resolve(__dirname,'../apps/extension/src');
+const{GuidedAssistant,confirmationIntent}=load(path.join(root,'features/assistant/guided-assistant.ts'));
+const{AssistantOrchestrator}=load(path.join(root,'features/assistant/assistant.orchestrator.ts'));
+const id=(p,n)=>`${p}_${String(n).padStart(32,'0')}`;
+const fields=['Full name','Email address'].map((label,index)=>({fieldId:id('field',index+1),label,labelSource:'label',labelUncertain:false,fieldType:index?'email':'text',required:true,visible:true,enabled:true,readOnly:false,eligible:true,exclusionReasons:[],options:[],constraints:{}}));
+function setup(override={}){
+ const calls={fills:[],reviews:[],spoken:[],requests:[]},now=Date.now(),session={sessionId:id('session',1),origin:'https://form.test',createdAt:now,expiresAt:now+1800000,version:1,facts:[]};
+ const scan={tabId:1,inventory:{scanId:id('scan',1),documentId:id('document',1),origin:session.origin,forms:[{formId:id('form',1),label:'Form',fields}]}};
+ const workflow=new AssistantOrchestrator({scan:async()=>scan,stopScan:async()=>{},status:async()=>session,ensure:async()=>session,clear:async()=>{},speak:async()=>{},stopSpeech:()=>{},resetVoice:()=>{},cancelReview:async()=>{},interpret:async request=>{calls.requests.push(request);const values=[/Alex Thomas|Maya Chen/.exec(request.transcript)?.[0],/[a-z]+@example\.test/.exec(request.transcript)?.[0]];return{scanId:request.scanId,updates:fields.flatMap((field,i)=>request.fields.some(current=>current.fieldId===field.fieldId)&&values[i]?[{fieldId:field.fieldId,target:{kind:field.fieldType,value:values[i]},evidence:{source:'transcript',factId:null,quote:request.transcript}}]:[]),clarifications:[],missingFields:[]};},fill:async(request,items)=>{if(request.type==='PIKO_FILL_REVIEW'){calls.reviews.push(items);return{ok:true,reviewId:id('review',calls.reviews.length),expiresAt:Date.now()+60000,preflight:{ok:true,results:items.map(item=>({fieldId:item.fieldId,status:'not-verified'}))}};}calls.fills.push(items);return{ok:true,result:{batchId:id('batch',calls.fills.length),status:'completed',results:items.map(item=>({fieldId:item.fieldId,status:'filled'}))}};},...override});
+ const guide=new GuidedAssistant(workflow,{connect:async()=>({transcription:true,speech:true}),permission:async()=>{},summarize:async()=>({scanId:scan.inventory.scanId,summary:'This form asks for your name and email.'}),speak:async text=>{calls.spoken.push(text);return true;}});
+ return{guide,workflow,calls};
+}
+test('guided multi-field answer is confirmed and filled one exact field at a time',async()=>{
+ const s=setup();await s.guide.start(true);assert.equal(s.guide.snapshot().phase,'answer');assert.equal(s.calls.spoken[0],'Analysing the form.');assert.ok(s.calls.spoken.some(text=>/form asks/.test(text)));await s.guide.answer('Alex Thomas and alex@example.test');assert.equal(s.guide.snapshot().phase,'confirm');assert.equal(s.calls.fills.length,0);assert.equal(s.calls.reviews[0].length,1);assert.match(s.guide.snapshot().message,/Alex Thomas/);
+ await s.guide.answer('yes');assert.equal(s.calls.fills.length,1);assert.equal(s.calls.fills[0][0].fieldId,fields[0].fieldId);assert.equal(s.guide.snapshot().phase,'answer');assert.equal(s.guide.snapshot().fieldId,fields[1].fieldId);await s.guide.answer('alex@example.test');await s.guide.confirm();assert.equal(s.guide.snapshot().phase,'complete');assert.equal(s.calls.fills.length,2);s.guide.dispose();
+});
+test('no and corrections revoke the previous exact review; ambiguous yes does not fill',async()=>{
+ const s=setup();await s.guide.start(false);await s.guide.answer('Alex Thomas');const old=s.guide.snapshot().turn;await s.guide.answer('no');assert.equal(s.guide.snapshot().phase,'answer');assert.equal(s.workflow.snapshot().review,null);await s.guide.answer('yes',old);assert.equal(s.calls.fills.length,0);await s.guide.answer('Maya Chen');await s.guide.answer('yes but that is wrong');assert.equal(s.calls.fills.length,0);s.guide.dispose();
+});
+test('late spoken yes cannot approve after a typed correction or stale page',async()=>{
+ const s=setup();await s.guide.start(false);await s.guide.answer('Alex Thomas');const ticket=s.guide.snapshot().turn;s.guide.typing();await s.guide.answer('yes',ticket);assert.equal(s.calls.fills.length,0);s.guide.stale('changed');await s.guide.confirm();assert.equal(s.calls.fills.length,0);assert.equal(s.guide.snapshot().phase,'stale');s.guide.dispose();
+});
+test('manual fallback and skipping preserve unresolved required fields without inventing answers',async()=>{
+ const s=setup({interpret:async()=>{throw Error('PRIVATE diagnostic');}});await s.guide.start(false);await s.guide.answer('Alex Thomas');assert.equal(s.guide.snapshot().phase,'answer');assert.ok(s.guide.snapshot().error);await s.guide.manual('Alex Thomas');await s.guide.confirm();await s.guide.skip();assert.equal(s.guide.snapshot().phase,'complete');assert.match(s.guide.snapshot().message,/1 required/);assert.equal(s.calls.fills.length,1);await s.guide.end();assert.equal(s.guide.snapshot().phase,'idle');s.guide.dispose();
+});
+test('only strict affirmative utterances count as approval',()=>{for(const text of ['yes','Yes.','Yes, that’s correct.','correct']){if(text.includes('’'))continue;assert.equal(confirmationIntent(text),'yes');}for(const text of ['yes but change it','yesterday','not yes','yes no'])assert.notEqual(confirmationIntent(text),'yes');});
+test('expired review returns to collection and final review never submits or refills',async()=>{
+ const s=setup();await s.guide.start(false);await s.guide.answer('Alex Thomas');s.workflow.expireReview();assert.equal(s.guide.snapshot().phase,'answer');await s.guide.confirm();assert.equal(s.calls.fills.length,0);await s.guide.manual('Alex Thomas');await s.guide.confirm();await s.guide.skip();await s.guide.finishReview();assert.equal(s.guide.snapshot().phase,'ready');assert.equal(s.calls.fills.length,1);s.guide.dispose();
+});
+test('spoken email punctuation is independently validated without guessing spelling or a domain',()=>{
+ const{supportedText}=load(path.join(root,'features/interpretation/spoken-evidence.ts'));
+ for(const item of require('./fixtures/spoken-email-cases.json'))assert.equal(supportedText(item.kind,item.value,item.quote),item.expected,JSON.stringify(item));
+});
+test('name sentence prefixes and generation instructions are never accepted as literal names',()=>{
+ const{invalidNameValue,isNameField,requestedNameValue}=load(path.join(root,'features/interpretation/name-intent.ts'));
+ for(const value of ['My name is Dario George','I am Dario George','use a random name','random name'])assert.equal(invalidNameValue(value),true);
+ assert.equal(isNameField('Enter Your Name:'),true);assert.equal(invalidNameValue('Dario George'),false);
+ assert.equal(requestedNameValue('Full name','Morgan Reed','Use a random name.','Use a random name.'),true);
+ for(const [label,value,text]of[['Full name','Morgan Reed',"Don't use a random name"],['Email address','Morgan Reed','Use a random name.'],['Full name','random name','Use a random name.']])assert.equal(requestedNameValue(label,value,text,text),false);
+});

@@ -81,6 +81,9 @@ async def run_process(args: list[str], timeout: float, error: str, capture: bool
             await process.wait()
 
 
+DEFAULT_PROMPT = "Web form voice assistant. Spoken answers include names, email addresses, street addresses, phone numbers, numbers, dates, yes, no."
+
+
 class Transcriber:
     def __init__(self, config: VoiceConfig, runner=run_process, temp_root: Path | None = None):
         self.config, self.runner, self.temp_root = config, runner, temp_root
@@ -143,9 +146,9 @@ class Transcriber:
                     samples.byteswap()
                 rms = math.sqrt(sum(value * value for value in samples) / len(samples))
                 milliseconds = round(frames / 16)
-                if rms < 100 or max(abs(value) for value in samples) < 300:
+                if rms < 60 or max(abs(value) for value in samples) < 200:
                     return Transcript(status="no-speech", text="", durationMs=milliseconds, processingMs=round((time.monotonic() - started) * 1000))
-                await self.runner([str(config.whisper), "-m", str(config.model), "-f", str(normalized), "-l", "en", "-ng", "-t", "4", "-nf", "-sns", "-otxt", "-of", str(output), "-np", "-nt"], config.timeout, "transcription-failed")
+                await self.runner([str(config.whisper), "-m", str(config.model), "-f", str(normalized), "-l", "en", "-ng", "-t", "4", "-nf", "-sns", "--prompt", DEFAULT_PROMPT, "-otxt", "-of", str(output), "-np", "-nt"], config.timeout, "transcription-failed")
                 transcript = output.with_suffix(".txt")
                 try:
                     if transcript.stat().st_size > 16384:
