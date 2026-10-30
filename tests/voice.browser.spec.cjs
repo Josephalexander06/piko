@@ -1,6 +1,15 @@
 const{test,expect}=require('@playwright/test');const{BrowserHarness}=require('./helpers/guided-browser.cjs');let h;test.afterEach(async()=>{await h?.close();h=undefined;});
-test('denied microphone capture offers text fallback and does not upload audio',async()=>{h=new BrowserHarness();await h.open();await h.panel.evaluate(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('Blocked','NotAllowedError');};});await h.start(true);await expect(h.panel.getByRole('alert')).toContainText('blocked the microphone');await h.panel.getByRole('button',{name:'Use text',exact:true}).click();await h.answer('Alex Thomas');await expect(h.panel.getByLabel('Answer confirmation')).toBeVisible();expect(h.requests.filter(r=>r.url.endsWith('/v1/transcribe'))).toHaveLength(0);});
+test('denied microphone capture offers text fallback and does not upload audio',async()=>{h=new BrowserHarness();await h.open();await h.panel.evaluate(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('Blocked','NotAllowedError');};});await h.start(true);await expect(h.panel.getByRole('alert')).toContainText('blocked the microphone');await h.panel.getByRole('button',{name:'Use text',exact:true}).click();await h.answer('Alex Thomas');await expect(h.panel.getByRole('status').filter({hasText:'What is your email address?'})).toBeVisible();await expect(h.page.locator('#name')).toHaveValue('');expect(h.requests.filter(r=>r.url.endsWith('/v1/transcribe'))).toHaveLength(0);});
 test('ending a recording stops microphone tracks without accepting or uploading a late answer',async()=>{h=new BrowserHarness();await h.open();await h.start(true);await expect(h.panel.getByText(/Listening…/)).toBeVisible();await h.panel.getByRole('button',{name:'End session'}).click();await expect.poll(()=>h.panel.evaluate(()=>window.__streams.every(s=>s.getTracks().every(t=>t.readyState==='ended')))).toBe(true);expect(h.requests.filter(r=>r.url.endsWith('/v1/transcribe'))).toHaveLength(0);});
+test('automatic spoken turns carry name, email and confirmation context through the local worker',async()=>{
+ test.setTimeout(60000);
+ h=new BrowserHarness();await h.open({transcripts:['My full name is Alex Thomas.','My email is alex@example.test.','Yes.'],answerKinds:['name','email','confirmation']});await h.start(true);
+ await expect(h.panel.getByRole('region',{name:'Final form review'})).toBeVisible({timeout:40000});
+ await expect(h.page.locator('#name')).toHaveValue('Alex Thomas');
+ await expect(h.page.locator('#email')).toHaveValue('alex@example.test');
+ expect(h.requests.filter(r=>r.url.endsWith('/v1/transcribe'))).toHaveLength(3);
+ expect(h.responses.filter(r=>r.url.endsWith('/v1/transcribe')).every(r=>r.status===200)).toBe(true);
+});
 test('installed Whisper, Piper and local Qwen handle a repeated name and complete spoken confirmations',async()=>{
  test.skip(process.env.PIKO_TEST_REAL_VOICE!=='1','Opt in to installed CPU voice and local Ollama');test.setTimeout(180000);
  const fs=require('node:fs/promises');h=new BrowserHarness();await h.open({realVoice:true,realSpeech:true,realModel:true});await h.start(true);

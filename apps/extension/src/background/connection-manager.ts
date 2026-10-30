@@ -7,7 +7,7 @@ import { initialConnection, REQUEST_TIMEOUT_MS, SERVICE_ORIGIN, SESSION_KEY, SES
 import type { ConnectionError, ConnectionRequest, ConnectionResponse, ConnectionState } from '../features/local-service/connection.types'
 import { isCapabilities } from '../features/local-service/connection.validation'
 import { isTranscript } from '../features/voice-input/transcription.validation'
-import { MAX_AUDIO_BYTES, VoiceInputError, voiceErrors, type Transcript } from '../features/voice-input/transcription.types'
+import { MAX_AUDIO_BYTES, VoiceInputError, voiceErrors, type AnswerKind, type Transcript } from '../features/voice-input/transcription.types'
 
 interface StoredSession { token: string; origin: string; expiresAt: number; pendingRevocation: boolean }
 class ServiceError extends Error { constructor(readonly code: ConnectionError) { super(code) } }
@@ -40,7 +40,7 @@ export class ConnectionManager {
   private async clear() { await chrome.storage.session.remove(SESSION_KEY) }
   private async save(session: StoredSession) { await chrome.storage.session.set({ [SESSION_KEY]: session }) }
 
-  async transcribeAudio(audio: Blob, signal: AbortSignal): Promise<Transcript> {
+  async transcribeAudio(audio: Blob, signal: AbortSignal, answerKind: AnswerKind = 'general'): Promise<Transcript> {
     if (this.audioController) throw new VoiceInputError('transcription-busy')
     if (!audio.size) throw new VoiceInputError('empty-audio')
     if (audio.size > MAX_AUDIO_BYTES) throw new VoiceInputError('audio-too-large')
@@ -56,6 +56,7 @@ export class ConnectionManager {
       if (!session || session.pendingRevocation || this.now() >= session.expiresAt) throw new VoiceInputError('session-expired')
       const form = new FormData()
       form.append('file', audio, 'recording')
+      if (answerKind !== 'general') form.append('answerKind', answerKind)
       const response = await this.http(`${SERVICE_ORIGIN}/v1/transcribe`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${session.token}`, 'X-Piko-Extension-Origin': session.origin }, signal: controller.signal, cache: 'no-store', credentials: 'omit', redirect: 'error', mode: 'cors' })
       if (response.status === 401 || response.status === 403) {
         await this.clear()

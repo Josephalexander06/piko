@@ -99,7 +99,8 @@ Whisper server is used.
 - Authentication and exact paired origin are checked before media parsing, and
   again before returning inference results. Request bodies are bounded during
   reception (8 MiB plus 16 KiB multipart overhead), with a 15-second upload
-  deadline. One file named `file` is allowed, with no additional form fields.
+  deadline. One file named `file` and one optional `answerKind` category are
+  allowed; other form fields are rejected.
   Its supplied filename and MIME type cannot choose files, executables, or models.
 - Magic bytes and FFprobe must agree on a supported WAV, WebM, Ogg, or MP4 audio
   container, with one supported audio stream. FFprobe has a 5-second deadline;
@@ -126,6 +127,19 @@ cleans up. On slower machines use shorter utterances. There is no partial
 transcription fallback or cloud request.
 
 ## API
+
+The authenticated multipart request accepts one `file` and an optional
+`answerKind` field: `general`, `name`, `email`, `tel`, `number`, `date`, or
+`confirmation`. Missing context defaults to `general`. The category selects a
+short, fixed local vocabulary hint; webpage labels, example answers, and arbitrary
+prompts are never passed to Whisper. Duplicate or unknown fields/categories are
+rejected. Audio and transcripts continue to use only the local companion.
+
+The recorder requires sustained sound before starting its silence countdown,
+retains quieter trailing syllables, and waits for 3 seconds of quiet (4 seconds
+for email, phone, numeric, and date answers). The 20-second recording limit still
+applies. Silero speech segments retain 300 ms of surrounding audio to preserve
+word boundaries and brief answers.
 
 The authenticated multipart response has exact fields:
 

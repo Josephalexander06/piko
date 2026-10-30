@@ -1,9 +1,9 @@
 import { makeId } from '../scanner/scanner.messages'
 import { isAudioReply } from './transcription.validation'
 import { AUDIO_CHUNK_BYTES, MAX_AUDIO_BYTES, MAX_RECORDING_MS, VOICE_PORT, VoiceInputError } from './transcription.types'
-import type { AudioMessage, AudioReply, Transcript } from './transcription.types'
+import type { AnswerKind, AudioMessage, AudioReply, Transcript } from './transcription.types'
 
-export async function uploadRecording(audio: Blob, durationMs: number, signal: AbortSignal): Promise<Transcript> {
+export async function uploadRecording(audio: Blob, durationMs: number, signal: AbortSignal, answerKind: AnswerKind = 'general'): Promise<Transcript> {
   if (!audio.size) throw new VoiceInputError('empty-audio')
   if (audio.size > MAX_AUDIO_BYTES) throw new VoiceInputError('audio-too-large')
   if (durationMs < 250 || durationMs > MAX_RECORDING_MS) throw new VoiceInputError('audio-too-long')
@@ -32,7 +32,7 @@ export async function uploadRecording(audio: Blob, durationMs: number, signal: A
   try {
     const bytes = new Uint8Array(await audio.arrayBuffer())
     const count = Math.ceil(bytes.length / AUDIO_CHUNK_BYTES)
-    const initial = await send({ type: 'begin', recordingId, byteLength: bytes.length, chunkCount: count, mimeType: audio.type.split(';')[0].toLowerCase(), durationMs: Math.round(durationMs) }, 3000)
+    const initial = await send({ type: 'begin', recordingId, byteLength: bytes.length, chunkCount: count, mimeType: audio.type.split(';')[0].toLowerCase(), durationMs: Math.round(durationMs), answerKind }, 3000)
     if (initial.type !== 'ack' || initial.nextIndex !== 0) throw new VoiceInputError('invalid-transfer')
     for (let index = 0; index < count; index++) {
       const chunk = bytes.subarray(index * AUDIO_CHUNK_BYTES, (index + 1) * AUDIO_CHUNK_BYTES)

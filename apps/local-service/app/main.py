@@ -19,7 +19,7 @@ from python_multipart.exceptions import MultipartParseError
 from .auth import ORIGIN_PATTERN, PairingManager, Session
 from .boundary import RequestBoundary
 from .voice_config import VoiceConfig, MAX_AUDIO_BYTES
-from .transcription import Transcriber, Transcript, VoiceError
+from .transcription import ANSWER_PROMPTS, Transcriber, Transcript, VoiceError
 from .services.ollama_client import OllamaClient, InterpretationError
 from .services.interpretation_service import InterpretationService
 from .schemas.interpret import InterpretRequest, InterpretResponse
@@ -168,21 +168,26 @@ def create_app(clock: Callable[[], float] = time.monotonic, wall_clock: Callable
             raise VoiceError("unsupported-audio", 415)
         # Keep multipart spooling in bounded memory. Only the pipeline writes
         # randomized per-request files, and cleans them on every exit path.
-        parser = MultiPartParser(request.headers, request.stream(), max_files=1, max_fields=0, max_part_size=MAX_AUDIO_BYTES)
+        parser = MultiPartParser(request.headers, request.stream(), max_files=1, max_fields=1, max_part_size=MAX_AUDIO_BYTES)
         parser.spool_max_size = MAX_AUDIO_BYTES + 16385
         job = disconnect = None
         try:
             form = await parser.parse()
             items = form.multi_items()
-            if len(items) != 1 or items[0][0] != "file" or not isinstance(items[0][1], UploadFile):
+            if len(items) not in (1, 2) or len({key for key, _ in items}) != len(items) or set(form) - {"file", "answerKind"} or not isinstance(form.get("file"), UploadFile):
                 raise VoiceError("invalid-audio")
-            upload = items[0][1]
+            answer_kind = form.get("answerKind", "general")
+            if not isinstance(answer_kind, str) or answer_kind not in ANSWER_PROMPTS:
+                raise VoiceError("invalid-audio")
+            upload = form["file"]
             data = bytearray()
             while chunk := await upload.read(65536):
                 data.extend(chunk)
                 if len(data) > request.app.state.transcriber.config.max_bytes:
                     raise VoiceError("audio-too-large", 413)
-            job = asyncio.create_task(request.app.state.transcriber.transcribe(bytes(data)))
+            # Older clients can still send only the audio file.
+            pipeline = request.app.state.transcriber
+            job = asyncio.create_task(pipeline.transcribe(bytes(data), answer_kind=answer_kind) if answer_kind != "general" else pipeline.transcribe(bytes(data)))
             data.clear()
             # Await disconnect directly: polling is_disconnected() uses a
             # cancellation scope that can swallow an outer request cancellation.

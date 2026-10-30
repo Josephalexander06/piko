@@ -1,5 +1,5 @@
 import { hasKeys, isOpaqueId, isRecord } from '../scanner/scanner.messages'
-import { AUDIO_CHUNK_BYTES, MAX_AUDIO_BYTES, MAX_RECORDING_MS, voiceErrors } from './transcription.types'
+import { AUDIO_CHUNK_BYTES, MAX_AUDIO_BYTES, MAX_RECORDING_MS, answerKinds, voiceErrors } from './transcription.types'
 import type { AudioMessage, AudioReply, Transcript } from './transcription.types'
 
 export const supportedAudioTypes = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/wav']
@@ -10,7 +10,7 @@ export function isAudioMessage(value: unknown): value is AudioMessage {
   if (!isRecord(value) || !isOpaqueId(value.recordingId) || !value.recordingId.startsWith('rec_')) return false
   if (value.type === 'commit') return hasKeys(value, ['type', 'recordingId'])
   if (value.type === 'chunk') return hasKeys(value, ['type', 'recordingId', 'index', 'data']) && Number.isSafeInteger(value.index) && Number(value.index) >= 0 && Number(value.index) < Math.ceil(MAX_AUDIO_BYTES / AUDIO_CHUNK_BYTES) && typeof value.data === 'string' && value.data.length > 0 && value.data.length <= AUDIO_CHUNK_BYTES * 4 / 3 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.data)
-  return value.type === 'begin' && hasKeys(value, ['type', 'recordingId', 'mimeType', 'byteLength', 'durationMs', 'chunkCount']) && typeof value.mimeType === 'string' && supportedAudioTypes.includes(value.mimeType) && Number.isSafeInteger(value.byteLength) && Number(value.byteLength) > 0 && Number(value.byteLength) <= MAX_AUDIO_BYTES && Number.isSafeInteger(value.durationMs) && Number(value.durationMs) >= 250 && Number(value.durationMs) <= MAX_RECORDING_MS && value.chunkCount === Math.ceil(Number(value.byteLength) / AUDIO_CHUNK_BYTES)
+  return value.type === 'begin' && hasKeys(value, ['type', 'recordingId', 'mimeType', 'byteLength', 'durationMs', 'chunkCount', ...('answerKind' in value ? ['answerKind'] : [])]) && (!('answerKind' in value) || (answerKinds as readonly unknown[]).includes(value.answerKind)) && typeof value.mimeType === 'string' && supportedAudioTypes.includes(value.mimeType) && Number.isSafeInteger(value.byteLength) && Number(value.byteLength) > 0 && Number(value.byteLength) <= MAX_AUDIO_BYTES && Number.isSafeInteger(value.durationMs) && Number(value.durationMs) >= 250 && Number(value.durationMs) <= MAX_RECORDING_MS && value.chunkCount === Math.ceil(Number(value.byteLength) / AUDIO_CHUNK_BYTES)
 }
 export function isAudioReply(value: unknown, recordingId: string): value is AudioReply {
   if (!isRecord(value) || value.recordingId !== recordingId) return false

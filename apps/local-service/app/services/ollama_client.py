@@ -19,7 +19,7 @@ class InterpretationError(Exception):
 @dataclass(frozen=True)
 class OllamaConfig:
     base_url: str = "http://127.0.0.1:11434"
-    model: str = "qwen3.5:2b"
+    model: str = "qwen2.5:14b"
     timeout: float = 60
     max_concurrency: int = 1
 

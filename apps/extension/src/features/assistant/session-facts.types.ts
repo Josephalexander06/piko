@@ -1,4 +1,5 @@
 export const WORKFLOW_SESSION_KEY = 'piko.assistant.session.v1'
+export const WORKFLOW_PERSISTENT_FACTS_KEY = 'piko.assistant.persistent_facts.v1'
 export const FACT_TTL_MS = 30 * 60 * 1000
 export const MAX_SESSION_FACTS = 20
 export type FactKey = 'full_name' | 'first_name' | 'last_name' | 'email' | 'phone' | 'department' | 'organization' | 'city' | 'country'

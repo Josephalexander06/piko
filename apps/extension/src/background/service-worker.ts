@@ -30,7 +30,7 @@ chrome.runtime.onConnect.addListener((port) => {
     return
   }
   if (port.name !== VOICE_PORT || !fromPanel(port.sender ?? {}) || activeAudio || activeSpeech) { port.disconnect(); return }
-  const transfer = new AudioTransfer((reply) => { try { port.postMessage(reply) } catch { transfer.dispose() } }, (audio, signal) => connection.transcribeAudio(audio, signal), () => { if (activeAudio === transfer) activeAudio = null })
+  const transfer = new AudioTransfer((reply) => { try { port.postMessage(reply) } catch { transfer.dispose() } }, (audio, signal, answerKind) => connection.transcribeAudio(audio, signal, answerKind), () => { if (activeAudio === transfer) activeAudio = null })
   activeAudio = transfer
   port.onMessage.addListener((message: unknown) => { void transfer.receive(message) })
   port.onDisconnect.addListener(() => transfer.dispose())

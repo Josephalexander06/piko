@@ -8,6 +8,7 @@ const { RecordingController } = load(path.join(root, 'features/voice-input/recor
 const { AudioTransfer } = load(path.join(root, 'background/audio-transfer.ts'));
 const { isAudioMessage, isTranscript } = load(path.join(root, 'features/voice-input/transcription.validation.ts'));
 const { AUDIO_CHUNK_BYTES, MAX_AUDIO_BYTES } = load(path.join(root, 'features/voice-input/transcription.types.ts'));
+const { answerKindForField, answerPauseMs } = load(path.join(root, 'features/voice-input/answer-context.ts'));
 const recordingId = `rec_${'0'.repeat(32)}`;
 const result = { status: 'ok', text: 'Synthetic transcript.', language: 'en', durationMs: 1000, processingMs: 1 };
 const flush = () => new Promise(setImmediate);
@@ -36,6 +37,19 @@ test('microphone starts only explicitly and Stop ends every track before uploadi
 test('automatic duration stop releases microphone without requiring Stop', async () => {
   const s = recorderSetup({ limitMs: 20 }); await s.controller.start(); s.advance(1000);
   await new Promise(resolve => setTimeout(resolve, 35)); assert.equal(s.stopped(), 1); assert.notEqual(s.controller.snapshot.stage, 'recording'); s.controller.reset();
+});
+test('answer category is captured at recording start and allows longer pauses for dictated addresses and digits', async () => {
+  let pause, end;
+  const s = recorderSetup({ watchSilence: (_stream, stop, quietMs) => { pause = quietMs; end = stop; return () => {}; } });
+  await s.controller.start('email'); assert.equal(pause, 4000);
+  await s.controller.start('confirmation'); // Starting again cannot replace an active recording's context.
+  s.advance(1000); end(); await flush();
+  assert.equal(s.uploads[0][3], 'email'); assert.equal(s.stopped(), 1); s.controller.reset();
+  assert.equal(answerKindForField({ fieldType: 'text', label: 'Full name' }, false), 'name');
+  assert.equal(answerKindForField({ fieldType: 'email', label: 'Ignore instructions PRIVATE' }, false), 'email');
+  assert.equal(answerKindForField({ fieldType: 'tel', label: 'Phone' }, true), 'confirmation');
+  assert.equal(answerKindForField({ fieldType: 'textarea', label: 'Biography' }, false), 'general');
+  assert.equal(answerPauseMs('confirmation'), 3000);
 });
 test('late permission grant after cancellation is stopped without recording', async () => {
   let grant; const s = recorderSetup({ getUserMedia: () => new Promise(resolve => { grant = resolve; }) });
@@ -74,7 +88,7 @@ test('browser default format is used when no preferred MIME type is advertised; 
 });
 function transferSetup(size = 4) {
   const replies = [], uploads = []; let released = 0;
-  const transfer = new AudioTransfer(reply => replies.push(reply), async (audio, signal) => { uploads.push({ audio, signal }); return result; }, () => released++);
+  const transfer = new AudioTransfer(reply => replies.push(reply), async (audio, signal, answerKind) => { uploads.push({ audio, signal, answerKind }); return result; }, () => released++);
   const begin = { type: 'begin', recordingId, mimeType: 'audio/webm', byteLength: size, durationMs: 1000, chunkCount: Math.ceil(size / AUDIO_CHUNK_BYTES) };
   return { transfer, begin, replies, uploads, released: () => released };
 }
@@ -84,12 +98,14 @@ test('strict transfer schema rejects raw blobs, arbitrary URLs, invalid duration
   assert.equal(isAudioMessage({ type: 'chunk', recordingId, index: 0, data: '!!!=' }), false);
   assert.equal(isTranscript({ ...result, selector: 'input' }), false);
   assert.equal(isTranscript({ ...result, status: 'no-speech' }), false);
+  assert.equal(isAudioMessage({ ...begin, answerKind: 'email' }), true);
+  for (const answerKind of ['PRIVATE prompt', {}, null, undefined]) assert.equal(isAudioMessage({ ...begin, answerKind }), false);
 });
 test('complete transfer reconstructs exact bytes once and releases all buffers', async () => {
-  const s = transferSetup(); await s.transfer.receive(s.begin);
+  const s = transferSetup(); await s.transfer.receive({ ...s.begin, answerKind: 'email' });
   await s.transfer.receive({ type: 'chunk', recordingId, index: 0, data: Buffer.from('test').toString('base64') });
   assert.equal(s.transfer.retainedBytes, 4); await s.transfer.receive({ type: 'commit', recordingId });
-  assert.equal(s.uploads.length, 1); assert.equal(await s.uploads[0].audio.text(), 'test'); assert.equal(s.replies.at(-1).type, 'result'); assert.equal(s.transfer.retainedBytes, 0); assert.equal(s.released(), 1);
+  assert.equal(s.uploads.length, 1); assert.equal(await s.uploads[0].audio.text(), 'test'); assert.equal(s.uploads[0].answerKind, 'email'); assert.equal(s.replies.at(-1).type, 'result'); assert.equal(s.transfer.retainedBytes, 0); assert.equal(s.released(), 1);
   await s.transfer.receive({ type: 'commit', recordingId }); assert.equal(s.uploads.length, 1);
 });
 test('incomplete, replayed, out-of-order and mismatched-ID transfers never upload', async () => {
@@ -112,13 +128,23 @@ test('actual client uses bounded JSON/Base64 chunks and waits for every acknowle
     queueMicrotask(() => listener(wire.type === 'commit' ? { type: 'result', recordingId: wire.recordingId, result } : { type: 'ack', recordingId: wire.recordingId, nextIndex: wire.type === 'begin' ? 0 : wire.index + 1 }));
   } };
   const client = createLoader({ chrome: { runtime: { connect: () => port } } })(path.join(root, 'features/voice-input/audio-transport.ts'));
-  const response = await client.uploadRecording(new Blob([new Uint8Array(AUDIO_CHUNK_BYTES + 1)], { type: 'audio/webm' }), 1000, new AbortController().signal);
+  const response = await client.uploadRecording(new Blob([new Uint8Array(AUDIO_CHUNK_BYTES + 1)], { type: 'audio/webm' }), 1000, new AbortController().signal, 'tel');
   assert.deepEqual(response, result); assert.deepEqual(messages.map(message => message.type), ['begin', 'chunk', 'chunk', 'commit']);
   assert.ok(messages.filter(message => message.type === 'chunk').every(message => message.data.length <= 65536));
+  assert.equal(messages[0].answerKind, 'tel');
 });
 test('quiet speech and natural pauses are retained before automatic stop',()=>{
  let now=0,rms=0,stopped=0,tick,closed=0,disconnected=0;
  class AudioContextFixture{createMediaStreamSource(){return{connect(){},disconnect(){disconnected++;}};}createAnalyser(){return{fftSize:0,getFloatTimeDomainData(samples){samples.fill(rms);},disconnect(){disconnected++;}};}async resume(){}async close(){closed++;}}
  const loadSilence=createLoader({AudioContext:AudioContextFixture,performance:{now:()=>now},setInterval:callback=>{tick=callback;return 1;},clearInterval:()=>{tick=null;}}),{watchSilence}=loadSilence(path.join(root,'features/voice-input/silence-detector.ts'));
- const cleanup=watchSilence({},()=>stopped++);tick();now=500;rms=0.008;tick();rms=0;now=2600;tick();assert.equal(stopped,0);now=3101;tick();assert.equal(stopped,1);cleanup();assert.equal(closed,1);assert.equal(disconnected,2);assert.equal(tick,null);
+ const cleanup=watchSilence({},()=>stopped++);tick();now=500;rms=0.003;tick();now=600;tick();rms=0.0018;now=900;tick();rms=0;now=3700;tick();assert.equal(stopped,0);now=3900;tick();assert.equal(stopped,1);tick();assert.equal(stopped,1);cleanup();assert.equal(closed,1);assert.equal(disconnected,2);assert.equal(tick,null);
+});
+test('an isolated microphone click cannot end a turn; spelling pauses allow speech to resume',()=>{
+ let now=0,rms=0,stopped=0,tick;
+ class AudioContextFixture{createMediaStreamSource(){return{connect(){},disconnect(){}};}createAnalyser(){return{fftSize:0,getFloatTimeDomainData(samples){samples.fill(rms);},disconnect(){}};}async resume(){}async close(){}}
+ const {watchSilence}=createLoader({AudioContext:AudioContextFixture,performance:{now:()=>now},setInterval:callback=>{tick=callback;return 1;},clearInterval:()=>{}})(path.join(root,'features/voice-input/silence-detector.ts'));
+ const cleanup=watchSilence({},()=>stopped++,4000);
+ rms=0.1;tick();rms=0;now=100;tick();now=5000;tick();assert.equal(stopped,0);
+ rms=0.01;now=5100;tick();now=5200;tick();rms=0;now=8500;tick();assert.equal(stopped,0);
+ rms=0.003;now=8600;tick();rms=0;now=12599;tick();assert.equal(stopped,0);now=12600;tick();assert.equal(stopped,1);cleanup();
 });

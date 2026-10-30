@@ -84,6 +84,14 @@ Recordings are capped at 20 seconds and stop after detected speech followed by
 quiet. Recording and playback do not overlap. Audio and transcripts are not
 kept as a permanent history. **End session** removes temporary form-session data.
 
+Voice input waits for 3 seconds of quiet, or 4 seconds when dictating an email,
+phone number, number, or date. Quiet trailing speech extends that pause; a lone
+microphone click does not start the silence countdown. Whisper receives a fixed
+vocabulary hint for the answer type (including names and confirmations), never a
+webpage-supplied prompt or suggested personal details. Speech detection preserves
+300 ms around detected words. All of this uses the installed local models, with
+no Google service or upload.
+
 ## Try the fixture
 
 ```bash

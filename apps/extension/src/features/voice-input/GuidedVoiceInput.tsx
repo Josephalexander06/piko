@@ -6,8 +6,9 @@ import { initialRecording } from './recording.types'
 import { uploadRecording } from './audio-transport'
 import { watchSilence } from './silence-detector'
 import { useVoiceState } from '../voice-output/voice.store'
+import type { AnswerKind } from './transcription.types'
 
-export function GuidedVoiceInput({ enabled, listen, turn, onTranscript, onRecording }: { enabled: boolean; listen: boolean; turn: number; onTranscript: (text: string, turn: number) => void; onRecording: () => void }) {
+export function GuidedVoiceInput({ enabled, listen, turn, answerKind = 'general', onTranscript, onRecording }: { enabled: boolean; listen: boolean; turn: number; answerKind?: AnswerKind; onTranscript: (text: string, turn: number) => void; onRecording: () => void }) {
   const [state, setState] = useState(initialRecording)
   const [controller] = useState(() => new RecordingController(setState, uploadRecording, { watchSilence }))
   const ticket = useRef(turn), delivered = useRef<string | null>(null)
@@ -17,9 +18,9 @@ export function GuidedVoiceInput({ enabled, listen, turn, onTranscript, onRecord
   useEffect(() => { controller.reset(); delivered.current = null }, [controller, turn])
   useEffect(() => {
     if (enabled && listen && !speaking && ['idle', 'error', 'no-speech'].includes(controller.snapshot.stage)) {
-      ticket.current = turn; callbacks.current.onRecording(); void controller.start()
+      ticket.current = turn; callbacks.current.onRecording(); void controller.start(answerKind)
     }
-  }, [controller, enabled, listen, speaking, turn])
+  }, [controller, enabled, listen, speaking, turn, answerKind])
   useEffect(() => { if (!enabled) controller.reset() }, [controller, enabled])
   useEffect(() => {
     if (state.stage === 'transcript-ready' && delivered.current !== state.transcript) {
@@ -30,7 +31,7 @@ export function GuidedVoiceInput({ enabled, listen, turn, onTranscript, onRecord
   return <div className="space-y-2">
     {state.stage === 'recording' ? <><p role="status" className="text-center text-sm text-emerald-900">Listening… {Math.floor(state.elapsedMs / 1000)}s</p><Button className="w-full min-h-12" onClick={() => controller.stop()}><Square aria-hidden="true" />Stop recording</Button><p className="text-center text-xs text-muted-foreground">Pause when you finish. Recording stops automatically.</p></>
       : state.stage === 'processing' ? <p role="status" className="py-3 text-center text-sm">Transcribing with Whisper…</p>
-      : <Button className="w-full min-h-12" variant="outline" disabled={!enabled || speaking || state.stage === 'requesting-permission'} onClick={() => { delivered.current = null; ticket.current = turn; callbacks.current.onRecording(); void controller.start() }}><Mic aria-hidden="true" />{state.stage === 'requesting-permission' ? 'Opening microphone…' : 'Speak answer'}</Button>}
+      : <Button className="w-full min-h-12" variant="outline" disabled={!enabled || speaking || state.stage === 'requesting-permission'} onClick={() => { delivered.current = null; ticket.current = turn; callbacks.current.onRecording(); void controller.start(answerKind) }}><Mic aria-hidden="true" />{state.stage === 'requesting-permission' ? 'Opening microphone…' : 'Speak answer'}</Button>}
     {state.stage === 'error' && <p role="alert" className="text-sm text-destructive">{state.error === 'microphone-denied' ? 'Chrome blocked the microphone. Allow microphone access for Piko and retry.' : state.error === 'microphone-missing' ? 'No microphone was found. Connect a microphone or type your answer.' : 'Voice input failed. Try again or type your answer.'}</p>}
     {state.stage === 'no-speech' && <p role="status" className="text-sm">No speech detected. Speak again or type your answer.</p>}
   </div>

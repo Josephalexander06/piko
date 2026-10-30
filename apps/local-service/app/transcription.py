@@ -82,6 +82,15 @@ async def run_process(args: list[str], timeout: float, error: str, capture: bool
 
 
 DEFAULT_PROMPT = "A person answers a form question in English with their own accent. Short answers, personal names, email addresses, numbers, dates, yes or no."
+ANSWER_PROMPTS = {
+    "general": DEFAULT_PROMPT,
+    "name": DEFAULT_PROMPT + " The current answer is a personal name, possibly spelled letter by letter.",
+    "email": DEFAULT_PROMPT + " The current answer is an email address, possibly spelled letter by letter.",
+    "tel": DEFAULT_PROMPT + " The current answer is a telephone number: individual digits, country code, area code, extension.",
+    "number": DEFAULT_PROMPT + " The current answer is a number, possibly including a decimal point or minus sign.",
+    "date": DEFAULT_PROMPT + " The current answer is a date: day, month, year.",
+    "confirmation": DEFAULT_PROMPT + " The current answer confirms or corrects the previous value: yes, no, correct, change my answer, or a corrected value.",
+}
 
 
 class Transcriber:
@@ -89,8 +98,11 @@ class Transcriber:
         self.config, self.runner, self.temp_root = config, runner, temp_root
         self.busy = False
 
-    async def transcribe(self, audio: bytes) -> Transcript:
+    async def transcribe(self, audio: bytes, answer_kind: str = "general") -> Transcript:
         config = self.config
+        # A fixed category is a vocabulary hint, never an arbitrary prompt from a page.
+        if not isinstance(answer_kind, str) or answer_kind not in ANSWER_PROMPTS:
+            raise VoiceError("invalid-audio")
         if not config.configured:
             raise VoiceError("model-unavailable", 503)
         if self.busy:
@@ -148,8 +160,8 @@ class Transcriber:
                 milliseconds = round(frames / 16)
                 if rms < 60 or max(abs(value) for value in samples) < 200:
                     return Transcript(status="no-speech", text="", durationMs=milliseconds, processingMs=round((time.monotonic() - started) * 1000))
-                vad_options = ["--vad", "-vm", str(config.vad_model), "-vt", "0.35", "-vspd", "100", "-vsd", "500", "-vp", "150"] if config.vad_model else []
-                await self.runner([str(config.whisper), "-m", str(config.model), "-f", str(normalized), "-l", "en", "-ng", "-t", "4", "-nf", "-sns", "-bs", "5", "--prompt", DEFAULT_PROMPT, *vad_options, "-otxt", "-of", str(output), "-np", "-nt"], config.timeout, "transcription-failed")
+                vad_options = ["--vad", "-vm", str(config.vad_model), "-vt", "0.35", "-vspd", "100", "-vsd", "500", "-vp", "300"] if config.vad_model else []
+                await self.runner([str(config.whisper), "-m", str(config.model), "-f", str(normalized), "-l", "en", "-ng", "-t", "4", "-nf", "-sns", "-bs", "5", "--prompt", ANSWER_PROMPTS[answer_kind], *vad_options, "-otxt", "-of", str(output), "-np", "-nt"], config.timeout, "transcription-failed")
                 transcript = output.with_suffix(".txt")
                 try:
                     if transcript.stat().st_size > 16384:

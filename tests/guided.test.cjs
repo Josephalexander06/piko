@@ -104,3 +104,56 @@ test('spoken email is extracted cleanly, saved to draft and not asked again',asy
  s.guide.dispose();
 });
 
+test('only once ask user input, save to db/memory, and auto-fill on another form without asking again',async()=>{
+ const savedFacts=[];
+ const setupForm=(formOrigin,formFields)=>{
+  const calls={fills:[],reviews:[],spoken:[],requests:[]},now=Date.now();
+  const session={sessionId:id('session',formOrigin==='https://form1.test'?1:2),origin:formOrigin,createdAt:now,expiresAt:now+1800000,version:1,facts:[...savedFacts]};
+  const scan={tabId:1,inventory:{scanId:id('scan',formOrigin==='https://form1.test'?1:2),documentId:id('document',1),origin:formOrigin,forms:[{formId:id('form',1),label:'Form',fields:formFields}]}};
+  const workflow=new AssistantOrchestrator({
+   scan:async()=>scan,stopScan:async()=>{},status:async()=>session,ensure:async()=>session,clear:async()=>{},speak:async()=>{},stopSpeech:()=>{},resetVoice:()=>{},cancelReview:async()=>{},
+   interpret:async request=>{calls.requests.push(request);const values=[/Alex Thomas/.exec(request.transcript)?.[0],/[a-z]+@example\.test/.exec(request.transcript)?.[0]];return{scanId:request.scanId,updates:formFields.flatMap((field,i)=>request.fields.some(current=>current.fieldId===field.fieldId)&&values[i]?[{fieldId:field.fieldId,target:{kind:field.fieldType,value:values[i]},evidence:{source:'transcript',factId:null,quote:request.transcript}}]:[]),clarifications:[],missingFields:[]};},
+   fill:async(request,items)=>{
+    if(request.type==='PIKO_FILL_REVIEW'){calls.reviews.push(items);return{ok:true,reviewId:id('review',calls.reviews.length),expiresAt:Date.now()+60000,preflight:{ok:true,results:items.map(item=>({fieldId:item.fieldId,status:'not-verified'}))}};}
+    calls.fills.push(items);
+    if(request.rememberSelected){
+     for(const item of items){
+      const f=formFields.find(field=>field.fieldId===item.fieldId);
+      if(f){savedFacts.push({factId:id('fact',savedFacts.length+1),key:f.fieldType==='email'?'email':'full_name',value:item.target.value,source:'user_confirmed',confirmedAt:now});}
+     }
+    }
+    return{ok:true,result:{batchId:id('batch',calls.fills.length),status:'completed',results:items.map(item=>({fieldId:item.fieldId,status:'filled'}))}};
+   }
+  });
+  const guide=new GuidedAssistant(workflow,{connect:async()=>({transcription:true,speech:true}),permission:async()=>{},summarize:async()=>({scanId:scan.inventory.scanId,summary:'Form summary.'}),speak:async text=>{calls.spoken.push(text);return true;}});
+  return{guide,workflow,calls};
+ };
+
+ const f1=setupForm('https://form1.test',fields);
+ await f1.guide.start(true);
+ assert.equal(f1.guide.snapshot().phase,'answer');
+ await f1.guide.answer('Alex Thomas');
+ await f1.guide.answer('alex@example.test');
+ assert.equal(f1.guide.snapshot().phase,'confirm');
+ await f1.guide.answer('yes');
+ assert.equal(f1.guide.snapshot().phase,'complete');
+ assert.equal(f1.calls.fills.length,1);
+ assert.equal(savedFacts.length,2);
+ f1.guide.dispose();
+
+ const form2Fields=['Name * · Required','Email address * · Required'].map((label,index)=>({fieldId:id('f2_field',index+1),label,labelSource:'label',labelUncertain:false,fieldType:index?'email':'text',required:true,visible:true,enabled:true,readOnly:false,eligible:true,exclusionReasons:[],options:[],constraints:{}}));
+ const f2=setupForm('https://form2.test',form2Fields);
+ await f2.guide.start(true);
+ assert.equal(f2.calls.spoken.filter(t=>/What is your/.test(t)).length,0);
+ assert.equal(f2.guide.snapshot().phase,'confirm');
+ assert.match(f2.guide.snapshot().message,/All answers are ready/);
+ assert.equal(f2.workflow.snapshot().drafts[form2Fields[0].fieldId].text,'Alex Thomas');
+ assert.equal(f2.workflow.snapshot().drafts[form2Fields[1].fieldId].text,'alex@example.test');
+ await f2.guide.answer('yes');
+ assert.equal(f2.calls.fills.length,1);
+ assert.equal(f2.calls.fills[0][0].target.value,'Alex Thomas');
+ assert.equal(f2.calls.fills[0][1].target.value,'alex@example.test');
+ assert.equal(f2.guide.snapshot().phase,'complete');
+ f2.guide.dispose();
+});
+

@@ -2,6 +2,7 @@ const {expect,chromium}=require('@playwright/test');
 const http=require('node:http'),net=require('node:net'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const{spawn,spawnSync}=require('node:child_process'),{once}=require('node:events');
 const root=path.resolve(__dirname,'../..'),python=path.join(root,'apps/local-service/.venv/bin/python');
+const servicePort=Number(process.env.PIKO_TEST_SERVICE_PORT||8765),serviceBase=`http://127.0.0.1:${servicePort}`;
 const formHTML='<!doctype html><title>Contact form</title><form><label>Full name<input id="name" required></label><label>Email address<input id="email" type="email" required></label><input type="password" value="PRIVATE" aria-label="Password"><button>Submit</button></form><script>window.submits=0;document.addEventListener("submit",e=>{e.preventDefault();window.submits++});</script>';
 async function listen(server,port=0){await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});return`http://127.0.0.1:${server.address().port}`;}
 function fakeWav(){const samples=48000,buffer=Buffer.alloc(44+samples*2);buffer.write('RIFF');buffer.writeUInt32LE(buffer.length-8,4);buffer.write('WAVEfmt ',8);buffer.writeUInt32LE(16,16);buffer.writeUInt16LE(1,20);buffer.writeUInt16LE(1,22);buffer.writeUInt32LE(16000,24);buffer.writeUInt32LE(32000,28);buffer.writeUInt16LE(2,32);buffer.writeUInt16LE(16,34);buffer.write('data',36);buffer.writeUInt32LE(samples*2,40);for(let n=0;n<9600;n++)buffer.writeInt16LE(Math.round(4000*Math.sin(n/16000*440*2*Math.PI)),44+n*2);return buffer;}
@@ -9,8 +10,9 @@ class BrowserHarness{
  mode='normal';requests=[];responses=[];modelRequests=[];errors=[];
  async open(options={}){
   this.options=options;
+  if(options.realVoice&&servicePort!==8765)throw Error('Alternate test ports support the fixture companion only');
   const running=options.realVoice&&process.env.PIKO_TEST_USE_RUNNING_SERVICE==='1';
-  if(!running){const probe=net.createServer();await listen(probe,8765);await new Promise(resolve=>probe.close(resolve));}
+  if(!running){const probe=net.createServer();await listen(probe,servicePort);await new Promise(resolve=>probe.close(resolve));}
   this.temporary=await fs.mkdtemp(path.join(os.tmpdir(),'piko-guided-browser-'));
   this.fixture=http.createServer((_request,response)=>{response.setHeader('Content-Type','text/html');response.end(formHTML);});this.base=await listen(this.fixture);
   this.model=http.createServer(async(request,response)=>{
@@ -23,19 +25,27 @@ class BrowserHarness{
    else{const updates=[];for(const field of content.fields){let value=field.type==='email'?/[a-z]+@example\.test/.exec(content.transcript)?.[0]:/Alex Thomas|Maya Chen|Dario George/.exec(content.transcript)?.[0];if(!value&&field.label==='Full name'&&/^(?:please )?use (?:a )?random name[.!]?$/i.test(content.transcript))value='Morgan Reed';if(value)updates.push({fieldId:active==='unknown'?`field_${'f'.repeat(32)}`:field.fieldId,target:{kind:field.type,value},evidence:{source:'transcript',factId:null,quote:content.transcript}});}output={updates,clarifications:[]};}
    response.end(JSON.stringify({model:'qwen3.5:2b',done:true,message:{role:'assistant',content:JSON.stringify(output)}}));
   });const modelURL=await listen(this.model);
-  const env={...process.env,PYTHONUNBUFFERED:'1',PIKO_TEST_REAL_PIPER:options.realSpeech?'1':'0',PIKO_TEST_FAST_SPEECH:'1',PIKO_TEST_TRANSCRIPTS:JSON.stringify(options.transcripts||['My full name is Alex Thomas.','Yes.','My email is alex@example.test.','Yes.']),OLLAMA_MODEL:'qwen3.5:2b',OLLAMA_BASE_URL:options.realModel?'http://127.0.0.1:11434':modelURL};
+  const env={...process.env,PYTHONUNBUFFERED:'1',PIKO_TEST_REAL_PIPER:options.realSpeech?'1':'0',PIKO_TEST_FAST_SPEECH:'1',PIKO_TEST_TRANSCRIPTS:JSON.stringify(options.transcripts||['My full name is Alex Thomas.','Yes.','My email is alex@example.test.','Yes.']),PIKO_TEST_ANSWER_KINDS:JSON.stringify(options.answerKinds||[]),OLLAMA_MODEL:'qwen3.5:2b',OLLAMA_BASE_URL:options.realModel?'http://127.0.0.1:11434':modelURL};
   if(!running)this.service=spawn(python,options.realVoice?['-m','app']:[path.join(root,'tests/fixtures/speech-companion.py')],{cwd:path.join(root,'apps/local-service'),env,stdio:['ignore','pipe','pipe']});
   this.service?.stderr.on('data',()=>{});this.service?.stdout.on('data',()=>{});
-  await expect.poll(async()=>{try{return(await fetch('http://127.0.0.1:8765/v1/health')).status;}catch{return 0;}},{timeout:20000}).toBe(200);
+  await expect.poll(async()=>{try{return(await fetch(`${serviceBase}/v1/health`)).status;}catch{return 0;}},{timeout:20000}).toBe(200);
   const audio=options.audio||path.join(this.temporary,'microphone.wav');this.audioPath=audio;
   if(!options.audio){if(options.realVoice){
    this.samples={name:path.join(this.temporary,'name.wav'),email:path.join(this.temporary,'email.wav'),yes:path.join(this.temporary,'yes.wav')};
    const script="import sys,wave;from piper import PiperVoice;voice=PiperVoice.load(sys.argv[1]);phrases=['My full name is Alex Thomas.','My email is alex at example dot test.','Yes.'];[(lambda audio,text:(voice.synthesize_wav(text,audio),audio.close()))(wave.open(file,'wb'),text) for file,text in zip(sys.argv[2:],phrases)]";
    const generated=spawnSync(python,['-c',script,path.join(root,'apps/local-service/voices/en_US-lessac-medium.onnx'),...Object.values(this.samples)],{env:{...process.env,ORT_DISABLE_TELEMETRY:'1'},stdio:'ignore'});expect(generated.status,'Generate the synthetic real-voice microphone fixtures').toBe(0);await fs.copyFile(this.samples.name,audio);
   }else await fs.writeFile(audio,fakeWav());}
+  let extensionPath=path.join(root,'apps/extension/dist');
+  if(servicePort!==8765){
+   // Redirect a disposable copy only; never rewrite the user's installed build.
+   const original=extensionPath;extensionPath=path.join(this.temporary,'extension');await fs.cp(original,extensionPath,{recursive:true});
+   for(const relative of await fs.readdir(extensionPath,{recursive:true}))if(/\.(js|json)$/.test(relative)){
+    const file=path.join(extensionPath,relative),source=await fs.readFile(file,'utf8');await fs.writeFile(file,source.replaceAll('http://127.0.0.1:8765',serviceBase));
+   }
+  }
   this.context=await chromium.launchPersistentContext(path.join(this.temporary,'profile'),{channel:'chromium',headless:true,executablePath:process.env.PIKO_CHROMIUM_PATH||undefined,ignoreDefaultArgs:['--disable-extensions'],args:['--enable-unsafe-extension-debugging','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-fake-audio-capture=${audio}%noloop`]});
-  const cdp=await this.context.browser().newBrowserCDPSession();await cdp.send('Extensions.loadUnpacked',{path:path.join(root,'apps/extension/dist')});this.worker=this.context.serviceWorkers()[0]||await this.context.waitForEvent('serviceworker');
-  this.context.on('response',response=>{if(response.url().startsWith('http://127.0.0.1:8765/v1/'))this.responses.push({url:response.url(),status:response.status()});});
+  const cdp=await this.context.browser().newBrowserCDPSession();await cdp.send('Extensions.loadUnpacked',{path:extensionPath});this.worker=this.context.serviceWorkers()[0]||await this.context.waitForEvent('serviceworker');
+  this.context.on('response',response=>{if(response.url().startsWith(`${serviceBase}/v1/`))this.responses.push({url:response.url(),status:response.status()});});
   this.context.on('request',request=>{if(/^https?:/.test(request.url()))this.requests.push({url:request.url(),worker:!!request.serviceWorker()});});
   this.page=await this.context.newPage();await this.page.goto(this.base);
   this.panel=await this.context.newPage();await this.panel.setViewportSize({width:360,height:800});this.panel.on('pageerror',error=>this.errors.push(error.message));
@@ -64,7 +74,7 @@ class BrowserHarness{
    if(this.page&&!this.page.isClosed())expect(await this.page.evaluate(()=>window.submits)).toBe(0);
    expect(this.errors).toEqual([]);
    if(this.worker)expect(await this.worker.evaluate(async()=>Object.keys(await chrome.storage.local.get(null)))).toEqual([]);
-   expect(this.requests.every(r=>r.worker&&r.url.startsWith('http://127.0.0.1:8765/v1/')||r.url===this.base+'/')).toBe(true);
+   expect(this.requests.every(r=>r.worker&&r.url.startsWith(`${serviceBase}/v1/`)||r.url===this.base+'/')).toBe(true);
   }finally{
    await this.context?.close();
    if(this.service&&this.service.exitCode===null){const done=once(this.service,'exit');this.service.kill();await done;}

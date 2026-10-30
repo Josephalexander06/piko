@@ -237,7 +237,7 @@ export class GuidedAssistant {
   async confirm() {
     if (this.state.phase !== 'confirm' || !this.workflow.snapshot().review) return
     const signal = this.renew(); this.set({ phase: 'filling', error: null })
-    this.workflow.approveCheckbox(true); await this.workflow.fill()
+    this.workflow.rememberCheckbox(true); this.workflow.approveCheckbox(true); await this.workflow.fill()
     if (signal.aborted) return
     const workflow = this.workflow.snapshot()
     if (workflow.error) { this.set({ phase: 'answer', error: workflowError(workflow.error ?? 'fill-unavailable') }); return }

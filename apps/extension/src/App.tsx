@@ -7,6 +7,7 @@ import { useGuidedAssistant } from '@/features/assistant/use-guided-assistant'
 import { displayAnswer } from '@/features/assistant/guided-assistant'
 import { validDraft } from '@/features/assistant/conversation-selectors'
 import { GuidedVoiceInput } from '@/features/voice-input/GuidedVoiceInput'
+import { answerKindForField } from '@/features/voice-input/answer-context'
 import { useVoiceState } from '@/features/voice-output/voice.store'
 import { useConnectionState, publishConnection } from '@/features/local-service/connection.store'
 import { connectionAction } from '@/features/local-service/connection.service'
@@ -63,7 +64,7 @@ export default function App() {
         {voice.error && <p role="alert" className="text-sm text-destructive">{voice.error === 'speech-playback-blocked' ? 'Chrome paused playback. Click Play question to hear it.' : 'Speech is unavailable. You can read the question and type your answer.'}</p>}
         {state.phase === 'idle' || state.phase === 'error' || state.phase === 'stale' ? <div className="space-y-2"><Button className="primary-action" onClick={() => void controller.start(true)}><Mic aria-hidden="true" />{state.phase === 'stale' ? 'Scan form again' : 'Start voice assistant'}</Button><Button variant="ghost" className="w-full" onClick={() => void controller.start(false)}>Use text instead</Button><p className="text-xs leading-5 text-muted-foreground">Voice mode reads back your answers for confirmation. Chrome asks for microphone permission the first time.</p></div> : null}
         {active && <>
-          {state.voice && <GuidedVoiceInput enabled={active} listen={state.listen} turn={state.turn} onRecording={() => controller.recording()} onTranscript={(text, turn) => void controller.answer(text, turn)} />}
+          {state.voice && <GuidedVoiceInput enabled={active} listen={state.listen} turn={state.turn} answerKind={answerKindForField(field, state.phase === 'confirm')} onRecording={() => controller.recording()} onTranscript={(text, turn) => void controller.answer(text, turn)} />}
           <label htmlFor="answer" className="block text-xs font-medium">{state.phase === 'confirm' ? 'Confirm or correct your answer' : 'Your answer'}</label>
           <Textarea id="answer" value={answer} maxLength={4096} rows={2} placeholder={state.phase === 'confirm' ? 'Yes, or type a correction…' : 'You can also type here…'} onChange={event => { controller.typing(); setAnswer(event.target.value) }} />
           <Button className="w-full" variant="outline" disabled={!answer.trim()} onClick={send}>Send answer</Button>

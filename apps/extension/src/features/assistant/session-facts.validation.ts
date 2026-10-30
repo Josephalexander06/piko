@@ -1,15 +1,35 @@
 import { hasKeys, isOpaqueId, isRecord } from '../scanner/scanner.messages'
 import type { ScanField } from '../scanner/scanner.types'
 import type { FillInstruction } from '../filling/fill.types'
+import { cleanLabel, isEmailField, isNameField, nameDescription } from '../interpretation/name-intent'
 import { FACT_TTL_MS, MAX_SESSION_FACTS, type FactKey, type SessionFact, type SessionSnapshot, type SessionRequest, type WorkflowContext } from './session-facts.types'
 
 const labels: Record<string, FactKey> = { 'full name': 'full_name', name: 'full_name', 'first name': 'first_name', 'given name': 'first_name', 'last name': 'last_name', surname: 'last_name', email: 'email', 'email address': 'email', phone: 'phone', 'phone number': 'phone', telephone: 'phone', department: 'department', organization: 'organization', organisation: 'organization', company: 'organization', city: 'city', country: 'country' }
 export function factKey(field: ScanField): FactKey | null {
   if (!field.eligible || !field.visible || !field.enabled || field.readOnly || field.labelUncertain || field.exclusionReasons.length) return null
-  const key = labels[field.label.trim().toLowerCase().replace(/\s+/g, ' ')]
+  const clean = cleanLabel(field.label).trim().toLowerCase().replace(/\s+/g, ' ')
+  let key: FactKey | null = labels[clean] ?? labels[field.label.trim().toLowerCase().replace(/\s+/g, ' ')] ?? null
+  if (!key) {
+    if (isNameField(field.label)) {
+      const desc = nameDescription(field.label)
+      key = desc === 'first name' ? 'first_name' : desc === 'last name' ? 'last_name' : 'full_name'
+    } else if (isEmailField(field.label)) {
+      key = 'email'
+    } else if (/\b(?:phone|telephone|mobile)\b/i.test(clean)) {
+      key = 'phone'
+    } else if (/\b(?:department)\b/i.test(clean)) {
+      key = 'department'
+    } else if (/\b(?:organization|organisation|company)\b/i.test(clean)) {
+      key = 'organization'
+    } else if (/\b(?:city)\b/i.test(clean)) {
+      key = 'city'
+    } else if (/\b(?:country)\b/i.test(clean)) {
+      key = 'country'
+    }
+  }
   if (!key) return null
-  if (key === 'email') return field.fieldType === 'email' ? key : null
-  if (key === 'phone') return field.fieldType === 'tel' ? key : null
+  if (key === 'email') return (field.fieldType === 'email' || field.fieldType === 'text' || isEmailField(field.label)) ? key : null
+  if (key === 'phone') return ['tel', 'text'].includes(field.fieldType) ? key : null
   return ['text', 'select', 'radio'].includes(field.fieldType) ? key : null
 }
 function safeValue(key: FactKey, value: unknown): value is string {

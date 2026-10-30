@@ -12,6 +12,8 @@ export function targetFor(field: ScanField, text: string): FillValue {
 }
 const numeric = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i
 function validNumber(text: string) { return numeric.test(text) && Number.isFinite(Number(text)) }
+import { isEmailField } from '../interpretation/name-intent'
+
 function validDate(text: string) {
   const timestamp = Date.parse(text)
   return /^\d{4}-\d{2}-\d{2}$/.test(text) && !text.startsWith('0000') && Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === text
@@ -20,8 +22,9 @@ export function validDraft(field: ScanField, draft?: WorkflowDraft): boolean {
   if (!draft || !draft.text.trim()) return false
   if (field.fieldType === 'checkbox') return ['true', 'false'].includes(draft.text) && (!field.required || draft.text === 'true')
   if (['select', 'radio'].includes(field.fieldType)) return field.options.some(option => option.optionId === draft.text && !option.disabled)
-  if (['text', 'textarea'].includes(field.fieldType)) return true
   if (field.fieldType === 'email' && !/^[^\s@]+@[^\s@]+$/.test(draft.text)) return false
+  if (isEmailField(field.label) && !/^[^\s@]+@[^\s@]+$/.test(draft.text)) return false
+  if (['text', 'textarea'].includes(field.fieldType)) return true
   if (field.fieldType === 'number') {
     if (!validNumber(draft.text)) return false
     const { min, max } = field.constraints, value = Number(draft.text)
@@ -41,7 +44,28 @@ export function reusableDrafts(fields: ScanField[], session: SessionSnapshot): R
   const drafts: Record<string, WorkflowDraft> = {}
   if (session.expiresAt <= Date.now()) return drafts
   for (const field of fields) {
-    const key = factKey(field), fact = session.facts.find(fact => fact.key === key)
+    const key = factKey(field)
+    if (!key) continue
+    let fact = session.facts.find(fact => fact.key === key)
+    if (!fact && key === 'first_name') {
+      const full = session.facts.find(fact => fact.key === 'full_name')
+      if (full) {
+        const parts = full.value.trim().split(/\s+/)
+        if (parts.length > 1) fact = { ...full, key: 'first_name', value: parts[0] }
+      }
+    } else if (!fact && key === 'last_name') {
+      const full = session.facts.find(fact => fact.key === 'full_name')
+      if (full) {
+        const parts = full.value.trim().split(/\s+/)
+        if (parts.length > 1) fact = { ...full, key: 'last_name', value: parts.slice(1).join(' ') }
+      }
+    } else if (!fact && key === 'full_name') {
+      const first = session.facts.find(fact => fact.key === 'first_name')
+      const last = session.facts.find(fact => fact.key === 'last_name')
+      if (first && last) {
+        fact = { ...first, key: 'full_name', value: `${first.value} ${last.value}` }
+      }
+    }
     if (!fact) continue
     let text = fact.value
     if (['select', 'radio'].includes(field.fieldType)) {

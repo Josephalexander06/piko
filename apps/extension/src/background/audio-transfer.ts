@@ -1,6 +1,6 @@
 import { isAudioMessage } from '../features/voice-input/transcription.validation'
 import { AUDIO_CHUNK_BYTES, VoiceInputError } from '../features/voice-input/transcription.types'
-import type { AudioMessage, AudioReply, Transcript } from '../features/voice-input/transcription.types'
+import type { AnswerKind, AudioMessage, AudioReply, Transcript } from '../features/voice-input/transcription.types'
 
 /** One recording per trusted extension port; never persistent session storage. */
 export class AudioTransfer {
@@ -11,7 +11,7 @@ export class AudioTransfer {
   private done = false
   private processing = false
   private timer: ReturnType<typeof setTimeout>
-  constructor(private readonly reply: (reply: AudioReply) => void, private readonly transcribe: (audio: Blob, signal: AbortSignal) => Promise<Transcript>, private readonly release: () => void, timeout = 15000) {
+  constructor(private readonly reply: (reply: AudioReply) => void, private readonly transcribe: (audio: Blob, signal: AbortSignal, answerKind: AnswerKind) => Promise<Transcript>, private readonly release: () => void, timeout = 15000) {
     this.timer = setTimeout(() => this.fail('invalid-transfer'), timeout)
   }
   get retainedBytes() { return this.bytes }
@@ -53,7 +53,7 @@ export class AudioTransfer {
     try {
       const audio = new Blob(this.chunks as BlobPart[], { type: this.begin.mimeType })
       this.chunks = []; this.bytes = 0
-      const result = await this.transcribe(audio, this.controller.signal)
+      const result = await this.transcribe(audio, this.controller.signal, this.begin.answerKind ?? 'general')
       if (!this.done) this.reply({ type: 'result', recordingId: message.recordingId, result })
     } catch (error) {
       if (!this.done) this.reply({ type: 'error', recordingId: message.recordingId, error: error instanceof VoiceInputError ? error.code : 'transcription-failed' })

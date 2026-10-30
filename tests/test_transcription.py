@@ -21,7 +21,7 @@ from app.services.piper_service import PiperService, PiperConfig
 def no_speech():
     return PiperService(PiperConfig(voice_path=Path(__file__).parent / "fixtures/missing-voice.onnx"))
 
-from app.transcription import Transcriber, Transcript, VoiceError, run_process
+from app.transcription import ANSWER_PROMPTS, Transcriber, Transcript, VoiceError, run_process
 from app.voice_config import VoiceConfig, MAX_AUDIO_BYTES
 
 ORIGIN = "chrome-extension://" + "a" * 32
@@ -93,8 +93,23 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('--vad', args)
         self.assertEqual(args[args.index('-vm') + 1], 'silero.bin')
         self.assertEqual(args[args.index('-vspd') + 1], '100')
-        self.assertEqual(args[args.index('-vp') + 1], '150')
+        self.assertEqual(args[args.index('-vp') + 1], '300')
         self.assert_clean()
+
+    async def test_each_answer_category_uses_local_vocabulary_without_rewriting_output(self):
+        for kind, prompt in ANSWER_PROMPTS.items():
+            result = await self.pipeline.transcribe(wav_bytes(), answer_kind=kind)
+            args = self.calls[-1][0]
+            self.assertEqual(args[args.index('--prompt') + 1], prompt)
+            self.assertEqual(result.text, self.transcript)
+            self.assert_clean()
+        for kind in ('PRIVATE arbitrary webpage prompt', '', None, []):
+            self.calls.clear()
+            with self.assertRaises(VoiceError) as error:
+                await self.pipeline.transcribe(wav_bytes(), answer_kind=kind)
+            self.assertEqual(error.exception.code, 'invalid-audio')
+            self.assertEqual(self.calls, [])
+            self.assert_clean()
 
     async def test_empty_and_unsupported_media(self):
         for audio, code in [(b"", "empty-audio"), (b"PRIVATE not media", "unsupported-audio"), (b"x" * (MAX_AUDIO_BYTES + 1), "audio-too-large")]:
@@ -204,6 +219,23 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["text"], "Synthetic fixture transcript")
         self.assertNotIn("PRIVATE", response.text)
+
+    async def test_optional_answer_category_reaches_pipeline_and_rejects_arbitrary_prompts(self):
+        received = []
+        async def contextual(audio, answer_kind='general'):
+            received.append((audio, answer_kind))
+            return Transcript(status='ok', text='Fictional answer', durationMs=1000, processingMs=1)
+        self.app.state.transcriber.transcribe = contextual
+        for kind in ANSWER_PROMPTS:
+            response = await self.client.post('/v1/transcribe', files={'file': ('audio.wav', wav_bytes())}, data={'answerKind': kind}, headers=self.auth)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(received[-1], (wav_bytes(), kind))
+        received.clear()
+        for fields in ([('answerKind', (None, 'PRIVATE prompt'))], [('answerKind', (None, 'email')), ('answerKind', (None, 'name'))], [('answerKind', ('prompt.txt', b'email'))]):
+            response = await self.client.post('/v1/transcribe', files=[('file', ('audio.wav', wav_bytes())), *fields], headers=self.auth)
+            self.assertEqual(response.status_code, 422)
+            self.assertNotIn('PRIVATE', response.text)
+        self.assertEqual(received, [])
 
     async def test_authentication_precedes_media_parsing(self):
         response = await self.client.post("/v1/transcribe", content=b"x" * 100000)

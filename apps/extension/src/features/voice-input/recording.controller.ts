@@ -1,6 +1,7 @@
 import { voiceSession } from '../voice-output/voice-session'
 import { initialRecording, type RecordingState } from './recording.types'
-import { MAX_AUDIO_BYTES, MAX_RECORDING_MS, VoiceInputError, type Transcript } from './transcription.types'
+import { MAX_AUDIO_BYTES, MAX_RECORDING_MS, VoiceInputError, type AnswerKind, type Transcript } from './transcription.types'
+import { answerPauseMs } from './answer-context'
 
 interface RecorderDependencies {
   getUserMedia: (constraints: MediaStreamConstraints) => Promise<MediaStream>
@@ -8,7 +9,7 @@ interface RecorderDependencies {
   supports: (mime: string) => boolean
   now: () => number
   limitMs: number
-  watchSilence?: (stream: MediaStream, stop: () => void) => () => void
+  watchSilence?: (stream: MediaStream, stop: () => void, quietMs: number) => () => void
 }
 const defaults: RecorderDependencies = {
   getUserMedia: constraints => {
@@ -32,8 +33,9 @@ export class RecordingController {
   private ticker: ReturnType<typeof setInterval> | undefined
   private abort: AbortController | null = null
   private silence: (() => void) | undefined
+  private answerKind: AnswerKind = 'general'
   private deps: RecorderDependencies
-  constructor(private readonly update: (state: RecordingState) => void, private readonly transcribe: (audio: Blob, durationMs: number, signal: AbortSignal) => Promise<Transcript>, dependencies: Partial<RecorderDependencies> = {}) { this.deps = { ...defaults, ...dependencies } }
+  constructor(private readonly update: (state: RecordingState) => void, private readonly transcribe: (audio: Blob, durationMs: number, signal: AbortSignal, answerKind: AnswerKind) => Promise<Transcript>, dependencies: Partial<RecorderDependencies> = {}) { this.deps = { ...defaults, ...dependencies } }
   get snapshot() { return { ...this.state } }
   get retainedBytes() { return this.size }
   private set(next: RecordingState) { this.state = next; this.update({ ...next }) }
@@ -58,9 +60,10 @@ export class RecordingController {
     this.reset(false)
     this.set({ ...initialRecording, stage: 'error', error })
   }
-  async start() {
+  async start(answerKind: AnswerKind = 'general') {
     if (['recording', 'requesting-permission', 'processing'].includes(this.state.stage)) return
     this.reset(false)
+    this.answerKind = answerKind
     const version = this.generation
     this.microphoneLease = voiceSession.beginRecording(() => this.reset())
     this.set({ ...initialRecording, stage: 'requesting-permission' })
@@ -82,7 +85,7 @@ export class RecordingController {
       recorder.onstop = () => { if (version === this.generation) void this.finish(version, recorder.mimeType) }
       this.started = this.deps.now()
       recorder.start(250)
-      this.silence = this.deps.watchSilence?.(stream, () => this.stop())
+      this.silence = this.deps.watchSilence?.(stream, () => this.stop(), answerPauseMs(answerKind))
       this.set({ ...initialRecording, stage: 'recording' })
       this.ticker = setInterval(() => { if (this.state.stage === 'recording') this.set({ ...this.state, elapsedMs: Math.min(this.deps.limitMs, this.deps.now() - this.started) }) }, 250)
       this.timer = setTimeout(() => this.stop(), this.deps.limitMs)
@@ -108,7 +111,7 @@ export class RecordingController {
     this.set({ ...initialRecording, stage: 'processing', elapsedMs: duration })
     this.abort = new AbortController()
     try {
-      const result = await this.transcribe(audio, duration, this.abort.signal)
+      const result = await this.transcribe(audio, duration, this.abort.signal, this.answerKind)
       if (version !== this.generation) return
       this.set({ ...initialRecording, stage: result.status === 'ok' ? 'transcript-ready' : 'no-speech', transcript: result.text })
     } catch (error) {

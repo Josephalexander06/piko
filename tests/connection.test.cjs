@@ -126,6 +126,15 @@ test('service-worker routing rejects webpage content scripts, unrelated extensio
 
 const voiceReply = { status: 'ok', text: 'Synthetic voice answer.', language: 'en', durationMs: 1000, processingMs: 1 };
 const audio = () => new Blob(['synthetic recording'], { type: 'audio/webm' });
+test('the worker sends only an answer category with audio to the fixed local endpoint', async () => {
+  const s = setup();
+  await s.act('PAIR', { code });
+  s.setHttp(async () => json(voiceReply));
+  assert.deepEqual(await s.manager.transcribeAudio(audio(), new AbortController().signal, 'email'), voiceReply);
+  assert.equal(s.calls.at(-1).url, 'http://127.0.0.1:8765/v1/transcribe');
+  assert.deepEqual([...s.calls.at(-1).options.body.keys()], ['file', 'answerKind']);
+  assert.equal(s.calls.at(-1).options.body.get('answerKind'), 'email');
+});
 test('audio upload requires a live non-revoking session and uses authenticated multipart at the fixed endpoint', async () => {
   const s = setup();
   await assert.rejects(s.manager.transcribeAudio(audio(), new AbortController().signal), { code: 'session-expired' });

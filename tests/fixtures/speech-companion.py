@@ -22,8 +22,11 @@ import uvicorn
 class FixtureTranscriber:
     config=types.SimpleNamespace(configured=True,max_bytes=MAX_AUDIO_BYTES)
     calls=0
-    async def transcribe(self,_data):
+    async def transcribe(self,_data,answer_kind='general'):
         answers=json.loads(os.environ.get('PIKO_TEST_TRANSCRIPTS','["My full name is Alex Thomas."]'))
+        expected=json.loads(os.environ.get('PIKO_TEST_ANSWER_KINDS','[]'))
+        if expected and (self.calls>=len(expected) or answer_kind!=expected[self.calls]):
+            raise RuntimeError('Unexpected synthetic answer category')
         text=answers[min(self.calls,len(answers)-1)];self.calls+=1
         return Transcript(status='ok',text=text,language='en',durationMs=1000,processingMs=1)
 
@@ -44,4 +47,4 @@ class FixtureSpeech:
 
 if __name__=='__main__':
     app=create_app(transcriber=FixtureTranscriber(),piper_service=None if os.environ.get('PIKO_TEST_REAL_PIPER')=='1' else FixtureSpeech())
-    uvicorn.run(app,host='127.0.0.1',port=8765,access_log=False,proxy_headers=False,log_level='warning')
+    uvicorn.run(app,host='127.0.0.1',port=int(os.environ.get('PIKO_TEST_SERVICE_PORT','8765')),access_log=False,proxy_headers=False,log_level='warning')
