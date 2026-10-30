@@ -42,7 +42,7 @@ const defaults: Services = {
 }
 export function confirmationIntent(text: string): 'yes' | 'no' | 'correction' {
   const normalized = text.toLowerCase().replace(/[^a-z\s']/g, '').replace(/\s+/g, ' ').trim()
-  if (['yes', 'yes please', 'yes correct', 'yes that is correct', 'yes thats correct', "yes that's correct", 'correct', 'confirm', 'that is correct', 'yes fill it', 'yes please fill it', 'fill it', 'yeah', 'yep', 'sure', 'ok', 'okay'].includes(normalized)) return 'yes'
+  if (['yes', 'yes please', 'yes correct', 'yes that is correct', 'yes thats correct', "yes that's correct", 'correct', 'confirm', 'that is correct', 'yes fill it', 'yes please fill it', 'fill it', 'yes fill form', 'yes fill the form', 'fill form', 'fill the form', 'yeah', 'yep', 'sure', 'ok', 'okay'].includes(normalized)) return 'yes'
   if (['no', 'no thanks', 'incorrect', 'not correct', 'change it', 'change answer', 'do not fill'].includes(normalized)) return 'no'
   return 'correction'
 }
@@ -126,20 +126,23 @@ export class GuidedAssistant {
   private async next() {
     if (this.workflow.snapshot().staleReason) return
     const signal = this.renew(), workflow = this.workflow.snapshot()
-    const field = this.fields().find(field => !workflow.verified.includes(field.fieldId) && !workflow.skipped.includes(field.fieldId))
-    if (!field) {
-      this.set({ phase: 'complete', fieldId: null, heard: '' })
-      const missing = this.fields().filter(field => field.required && !workflow.verified.includes(field.fieldId)).length
-      await this.say(missing ? `${missing} required answers remain. Review the page and finish them manually.` : 'Your answers have been checked. Review the completed form before submitting it yourself.', false)
+    const nextUnanswered = this.fields().find(field => !workflow.verified.includes(field.fieldId) && !workflow.skipped.includes(field.fieldId) && !validDraft(field, workflow.drafts[field.fieldId]))
+    if (nextUnanswered) {
+      this.workflow.collect(); this.set({ phase: 'answer', fieldId: nextUnanswered.fieldId, heard: '', error: null })
+      const options = nextUnanswered.options.filter(option => !option.disabled).map(option => spoken(option.label)).join(', ')
+      const question = isNameField(nextUnanswered.label) ? `${this.fields().indexOf(nextUnanswered) === 0 ? `Let's start with your ${nameDescription(nextUnanswered.label)}. ` : ''}What is your ${nameDescription(nextUnanswered.label)}?` : nextUnanswered.fieldType === 'email' || isEmailField(nextUnanswered.label) ? 'What is your email address?' : `What should I enter for ${spoken(cleanLabel(nextUnanswered.label))}?`
+      await this.say(`${question}${options ? options.length <= 350 ? ` Options are ${options}.` : ' Choose from the options shown on the page.' : ''}`)
+      if (signal.aborted) return
       return
     }
-    this.workflow.collect(); this.set({ fieldId: field.fieldId, heard: '', error: null })
-    if (validDraft(field, this.workflow.snapshot().drafts[field.fieldId])) { await this.prepareConfirmation(); return }
-    this.set({ phase: 'answer' })
-    const options = field.options.filter(option => !option.disabled).map(option => spoken(option.label)).join(', ')
-    const question = isNameField(field.label) ? `${this.fields().indexOf(field) === 0 ? `Let's start with your ${nameDescription(field.label)}. ` : ''}What is your ${nameDescription(field.label)}?` : field.fieldType === 'email' || isEmailField(field.label) ? 'What is your email address?' : `What should I enter for ${spoken(cleanLabel(field.label))}?`
-    await this.say(`${question}${options ? options.length <= 350 ? ` Options are ${options}.` : ' Choose from the options shown on the page.' : ''}`)
-    if (signal.aborted) return
+    const toFill = this.fields().filter(field => !workflow.verified.includes(field.fieldId) && !workflow.skipped.includes(field.fieldId) && validDraft(field, workflow.drafts[field.fieldId]))
+    if (toFill.length > 0) {
+      await this.prepareConfirmation()
+      return
+    }
+    this.set({ phase: 'complete', fieldId: null, heard: '' })
+    const missing = this.fields().filter(field => field.required && !workflow.verified.includes(field.fieldId)).length
+    await this.say(missing ? `${missing} required answers remain. Review the page and finish them manually.` : 'Your answers have been checked. Review the completed form before submitting it yourself.', false)
   }
   typing() { this.renew() }
   async answer(text: string, turn = this.state.turn) {
@@ -165,8 +168,17 @@ export class GuidedAssistant {
         await this.say(`I have your ${nameDescription(field.label)}. Please say yes to continue, or no to change it.`)
         return
       }
-      await this.correct(intent === 'no')
+      const mentioned = this.fields().find(f => {
+        const l = cleanLabel(f.label).toLowerCase()
+        return text.toLowerCase().includes(l) || (isNameField(f.label) && text.toLowerCase().includes('name')) || (isEmailField(f.label) && text.toLowerCase().includes('email'))
+      })
+      await this.correct(intent === 'no', mentioned?.fieldId)
       if (intent === 'no') return
+    }
+    const norm = text.toLowerCase().replace(/[^a-z\s]/g, '').trim()
+    if (this.state.phase === 'answer' && ['skip', 'skip this', 'skip this field', 'skip field', 'skip it', 'next field', 'skip please'].includes(norm)) {
+      await this.skip()
+      return
     }
     const signal = this.renew()
     if (this.state.fieldId && this.workflow.snapshot().drafts[this.state.fieldId]) this.workflow.revise(this.state.fieldId)
@@ -185,24 +197,42 @@ export class GuidedAssistant {
       const clarification = workflow.clarifications.find(item => item.targetFieldIds.includes(field?.fieldId ?? ''))
       this.set({ phase: 'answer' }); await this.say(clarification ? spoken(clarification.question) : `I need a clearer answer for ${spoken(cleanLabel(field?.label ?? 'this field'))}. Please try again.`); return
     }
-    await this.prepareConfirmation()
+    await this.next()
   }
   async prepareConfirmation(overwrite = false) {
-    const field = this.currentField(); if (!field) return
     const signal = this.renew()
-    for (const other of this.fields()) if (this.workflow.snapshot().drafts[other.fieldId]?.selected) this.workflow.edit(other.fieldId, { selected: false })
-    this.workflow.edit(field.fieldId, { selected: true, overwrite }); this.set({ phase: 'interpreting' })
+    const fieldsToFill = this.fields().filter(field => !this.workflow.snapshot().verified.includes(field.fieldId) && !this.workflow.snapshot().skipped.includes(field.fieldId) && validDraft(field, this.workflow.snapshot().drafts[field.fieldId]))
+    if (!fieldsToFill.length) { await this.next(); return }
+    for (const other of this.fields()) {
+      const shouldSelect = fieldsToFill.some(f => f.fieldId === other.fieldId)
+      if (Boolean(this.workflow.snapshot().drafts[other.fieldId]?.selected) !== shouldSelect) {
+        this.workflow.edit(other.fieldId, { selected: shouldSelect, ...(shouldSelect ? { overwrite } : {}) })
+      }
+    }
+    this.set({ phase: 'interpreting' })
     await this.workflow.review()
     if (signal.aborted) return
-    if (!this.workflow.snapshot().review) {
-      const workflow = this.workflow.snapshot(), reason = workflow.outcome?.results.find(result => result.fieldId === field.fieldId)?.reason
-      const error = reason === 'constraint' ? `This page rejected the answer for ${spoken(cleanLabel(field.label))}. Please say it again or type a corrected answer.` : reason === 'existing-value' ? `This field already has a different answer. Clear it on the page, then try again.` : workflowError(workflow.error ?? 'fill-invalid')
-      this.set({ phase: 'answer', error }); await this.say(error); return
+    const workflow = this.workflow.snapshot()
+    if (!workflow.review) {
+      const failed = workflow.outcome?.results.find(result => result.status === 'invalid' || result.status === 'rejected' || result.reason)
+      const failedField = failed ? this.fields().find(f => f.fieldId === failed.fieldId) : null
+      const reason = failed?.reason
+      const error = reason === 'constraint' && failedField ? `This page rejected the answer for ${spoken(cleanLabel(failedField.label))}. Please say it again or type a corrected answer.` : reason === 'existing-value' ? `This field already has a different answer. Clear it on the page, then try again.` : workflowError(workflow.error ?? 'fill-invalid')
+      this.set({ phase: 'answer', fieldId: failedField?.fieldId ?? fieldsToFill[0]?.fieldId ?? null, error })
+      await this.say(error)
+      return
     }
-    this.set({ phase: 'confirm', heard: '', error: null })
-    const value = spoken(displayAnswer(field, this.workflow.snapshot()))
-    const message = isNameField(field.label) ? randomNameRequest(this.workflow.snapshot().transcript) ? `I suggest the name ${value}.` : `Your ${nameDescription(field.label)} is ${value}.` : field.fieldType === 'email' || isEmailField(field.label) ? `Your email address is ${value}.` : `For ${spoken(cleanLabel(field.label))}, I have ${value}.`
-    await this.say(`${message} Shall I continue? Say yes to fill this answer, or no to change it.`)
+    const nameField = fieldsToFill.find(f => isNameField(f.label))
+    this.set({ phase: 'confirm', heard: '', error: null, fieldId: nameField?.fieldId ?? fieldsToFill[0]?.fieldId ?? null })
+    if (fieldsToFill.length === 1) {
+      const field = fieldsToFill[0]
+      const value = spoken(displayAnswer(field, this.workflow.snapshot()))
+      const message = isNameField(field.label) ? randomNameRequest(this.workflow.snapshot().transcript) ? `I suggest the name ${value}.` : `Your ${nameDescription(field.label)} is ${value}.` : field.fieldType === 'email' || isEmailField(field.label) ? `Your email address is ${value}.` : `For ${spoken(cleanLabel(field.label))}, I have ${value}.`
+      await this.say(`${message} Shall I continue? Say yes to fill this answer, or no to change it.`)
+    } else {
+      const summaryList = fieldsToFill.slice(0, 3).map(f => `${spoken(cleanLabel(f.label))} is ${spoken(displayAnswer(f, this.workflow.snapshot()))}`).join(', ')
+      await this.say(`All answers are ready. ${summaryList}. Shall I fill the form? Say yes to fill, or no to change.`)
+    }
   }
   async confirm() {
     if (this.state.phase !== 'confirm' || !this.workflow.snapshot().review) return
@@ -210,18 +240,19 @@ export class GuidedAssistant {
     this.workflow.approveCheckbox(true); await this.workflow.fill()
     if (signal.aborted) return
     const workflow = this.workflow.snapshot()
-    if (workflow.error || !workflow.verified.includes(this.state.fieldId!)) { this.set({ phase: 'answer', error: workflowError(workflow.error ?? 'fill-unavailable') }); return }
+    if (workflow.error) { this.set({ phase: 'answer', error: workflowError(workflow.error ?? 'fill-unavailable') }); return }
     await this.next()
   }
-  async correct(ask = true) {
-    const field = this.currentField(); if (!field || ['filling', 'starting'].includes(this.state.phase)) return
-    this.renew(); this.workflow.revise(field.fieldId); this.set({ phase: 'answer', heard: '', error: null })
-    if (ask) await this.say(isNameField(field.label) ? `Let's try again. What is your ${nameDescription(field.label)}?` : `What should I enter for ${spoken(cleanLabel(field.label))} instead?`)
+  async correct(ask = true, targetFieldId?: string) {
+    const target = targetFieldId ? this.fields().find(f => f.fieldId === targetFieldId) : this.currentField()
+    if (!target || ['filling', 'starting'].includes(this.state.phase)) return
+    this.renew(); this.workflow.revise(target.fieldId); this.set({ phase: 'answer', fieldId: target.fieldId, heard: '', error: null })
+    if (ask) await this.say(isNameField(target.label) ? `Let's try again. What is your ${nameDescription(target.label)}?` : `What should I enter for ${spoken(cleanLabel(target.label))} instead?`)
   }
   async manual(text: string) {
     const field = this.currentField(); if (!field || !['answer', 'confirm'].includes(this.state.phase)) return
     if (isNameField(field.label) && invalidNameValue(text)) { await this.answer(text); return }
-    this.workflow.edit(field.fieldId, { text }); await this.prepareConfirmation()
+    this.workflow.edit(field.fieldId, { text }); await this.next()
   }
   cancelAnswer() { this.renew(); this.workflow.cancelInterpretation(); this.set({ phase: 'answer', error: null }) }
   async skip() {
