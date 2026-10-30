@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import ValidationError
 from ..schemas.interpret import InterpretRequest, InterpretResponse, MissingField, ModelProposal, Update
 from .ollama_client import OllamaClient, InterpretationError, MAX_RESPONSE_BYTES, strict_json
-from .proposal_validator import validate_proposal, random_name_request, is_name_field, spoken_email_candidates, invalid_name_value
+from .proposal_validator import validate_proposal, random_name_request, is_name_field, is_email_field, spoken_email_candidates, invalid_name_value
 from ..schemas.summary import SummaryRequest, SummaryResponse, SummaryText
 
 PROMPT = (Path(__file__).parents[1] / "prompts/interpretation.txt").read_text()
@@ -70,13 +70,13 @@ def output_schema(request: InterpretRequest) -> dict:
         evidence['source'] = {'type': 'string', 'const': 'transcript'}
         evidence['factId'] = {'type': 'null'}
         evidence['quote']['enum'] = [request.transcript]
-    if len(request.fields) == 1 and request.fields[0].type == 'email':
+    if len(request.fields) == 1 and (request.fields[0].type == 'email' or is_email_field(request.fields[0].label)):
         candidates = spoken_email_candidates(request.transcript)
         if len(candidates) == 1 and not re.search(r"\b(maybe|might|uncertain|not|never|could|either|possibly|guess)\b|don't|isn't", request.transcript.lower()):
             schema['properties']['updates']['items']['anyOf'][0]['properties']['target']['properties']['value']['enum'] = candidates
             schema['properties']['updates']['minItems'] = 1
             schema['properties']['clarifications']['maxItems'] = 0
-    if len(request.fields) == 1 and request.fields[0].type in ('text', 'textarea') and not request.knownFacts:
+    elif len(request.fields) == 1 and request.fields[0].type in ('text', 'textarea') and not request.knownFacts:
         field = request.fields[0]
         if is_name_field(field.label) and random_name_request(request.transcript):
             schema['properties']['updates']['minItems'] = 1

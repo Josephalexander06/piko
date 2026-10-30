@@ -42,7 +42,7 @@ const defaults: Services = {
 }
 export function confirmationIntent(text: string): 'yes' | 'no' | 'correction' {
   const normalized = text.toLowerCase().replace(/[^a-z\s']/g, '').replace(/\s+/g, ' ').trim()
-  if (['yes', 'yes please', 'yes correct', 'yes that is correct', 'yes thats correct', "yes that's correct", 'correct', 'confirm', 'that is correct', 'yes fill it', 'yes please fill it', 'fill it', 'yes fill form', 'yes fill the form', 'fill form', 'fill the form', 'yeah', 'yep', 'sure', 'ok', 'okay'].includes(normalized)) return 'yes'
+  if (['yes', 'yes please', 'yes correct', 'yes that is correct', 'yes thats correct', "yes that's correct", 'correct', 'confirm', 'that is correct', 'yes fill it', 'yes please fill it', 'fill it', 'yes fill form', 'yes fill the form', 'fill form', 'fill the form', 'yeah', 'yep', 'sure', 'ok', 'okay', 'go ahead', 'proceed', 'submit', 'yes submit', 'yes proceed', 'yes go ahead', 'yes please fill', 'yes fill'].includes(normalized)) return 'yes'
   if (['no', 'no thanks', 'incorrect', 'not correct', 'change it', 'change answer', 'do not fill'].includes(normalized)) return 'no'
   return 'correction'
 }

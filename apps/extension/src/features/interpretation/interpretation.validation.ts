@@ -38,7 +38,7 @@ export function isInterpretResponse(value: unknown, request: InterpretRequest): 
     if (!source || !evidence.quote.trim() || !source.includes(evidence.quote)) return false
     if ('value' in update.target) {
       if (isNameField(field.label) && invalidNameValue(update.target.value)) return false
-      if (!update.target.value.trim() || !supportedText(update.target.kind, update.target.value, evidence.quote) && !(update.target.kind === 'text' && request.fields.length === 1 && requestedNameValue(field.label, update.target.value, request.transcript, evidence.quote))) return false
+      if (!update.target.value.trim() || !supportedText(update.target.kind, update.target.value, evidence.quote, field.label) && !(update.target.kind === 'text' && request.fields.length === 1 && requestedNameValue(field.label, update.target.value, request.transcript, evidence.quote))) return false
     }
   }
   const clarificationIds = new Set<string>()

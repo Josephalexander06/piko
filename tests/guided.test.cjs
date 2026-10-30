@@ -87,3 +87,20 @@ test('single-word answer for a field is populated directly without clarification
  assert.match(s.guide.snapshot().message,/Texas/);
  s.guide.dispose();
 });
+test('spoken email is extracted cleanly, saved to draft and not asked again',async()=>{
+ const{extractEmailCandidate,extractDirectAnswer}=load(path.join(root,'features/interpretation/name-intent.ts'));
+ assert.equal(extractEmailCandidate('my email is dario at gmail dot com'),'dario@gmail.com');
+ assert.equal(extractEmailCandidate('dario at the rate gmail dot com'),'dario@gmail.com');
+ assert.equal(extractEmailCandidate('dario 06 at gmail dot com'),'dario06@gmail.com');
+ assert.equal(extractDirectAnswer('my email is dario at example dot com',{label:'Email * · Required',fieldType:'text'}),'dario@example.com');
+ const emailField={...fields[1],fieldType:'text',label:'Email * · Required'};
+ const s=setup({fields:[emailField],interpret:async request=>({scanId:request.scanId,updates:[{fieldId:emailField.fieldId,target:{kind:'text',value:'dario@example.com'},evidence:{source:'transcript',factId:null,quote:request.transcript}}],clarifications:[],missingFields:[]})});
+ await s.guide.start(true);
+ assert.match(s.guide.snapshot().message,/email address/);
+ await s.guide.answer('my email is dario at example dot com');
+ assert.equal(s.guide.snapshot().phase,'confirm');
+ assert.equal(s.workflow.snapshot().drafts[emailField.fieldId]?.text,'dario@example.com');
+ assert.equal(s.calls.spoken.filter(text=>/What is your email/.test(text)).length,1);
+ s.guide.dispose();
+});
+

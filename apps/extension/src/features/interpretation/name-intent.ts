@@ -14,7 +14,8 @@ export function isNameField(label: string) {
 }
 
 export function isEmailField(label: string) {
-  return emailLabels.has(normalize(cleanLabel(label)))
+  const norm = normalize(cleanLabel(label))
+  return emailLabels.has(norm) || /\b(?:e-?mail)\b/i.test(norm)
 }
 export function nameDescription(label: string): string {
   if (/\b(first|given)\b/i.test(label)) return 'first name'
@@ -22,7 +23,34 @@ export function nameDescription(label: string): string {
   if (/\bfull\b/i.test(label)) return 'full name'
   return 'name'
 }
-export function extractDirectAnswer(text: string, field?: { label: string }): string {
+export function extractEmailCandidate(text: string): string | null {
+  let normalized = text.toLowerCase().trim().replace(/\s+/g, ' ')
+  normalized = normalized.replace(/\b(?:at\s+the\s+rate(?:\s+of)?|at)\b/g, '@')
+  for (const [word, symbol] of [['dot', '.'], ['underscore', '_'], ['dash', '-'], ['hyphen', '-']]) {
+    normalized = normalized.replace(new RegExp(`\\b${word}\\b`, 'g'), symbol)
+  }
+  normalized = normalized.replace(/\s*([@._-])\s*/g, '$1')
+  const cleanText = normalized
+    .replace(/^(?:(?:(?:my|the)\s+)?(?:email|e-mail|mail)(?:\s+id|\s+address)?\s+(?:is|would be)|this is|it is|it['’]s|enter|please enter|put)\s+/i, '')
+    .replace(/^(?:please\s+)?(?:use\s+)?/i, '')
+    .trim()
+  const match = cleanText.match(/^([a-z0-9\s._-]+)@([a-z0-9.-]+)$/i)
+  if (match && match[2].includes('.')) {
+    const localPart = match[1].replace(/\s+/g, '')
+    const domain = match[2].replace(/\.+$/, '')
+    if (localPart) return `${localPart}@${domain}`.toLowerCase()
+  }
+  const emailMatch = normalized.match(/[^\s@<>()[\]{},;:'"]+@[a-z0-9.-]+/g)
+  if (emailMatch && emailMatch.length > 0) {
+    return emailMatch[0].replace(/\.+$/, '').toLowerCase()
+  }
+  return null
+}
+export function extractDirectAnswer(text: string, field?: { label: string; fieldType?: string }): string {
+  if (field && (isEmailField(field.label) || ('fieldType' in field && field.fieldType === 'email'))) {
+    const candidate = extractEmailCandidate(text)
+    if (candidate) return candidate
+  }
   let cleaned = text.trim().replace(/[.!?]+$/, '').trim()
   if (field) {
     const label = cleanLabel(field.label).toLowerCase()
