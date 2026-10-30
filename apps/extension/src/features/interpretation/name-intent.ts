@@ -1,6 +1,21 @@
 const labels = new Set(['name', 'full name', 'first name', 'last name', 'given name', 'surname', 'your name', 'enter your name', 'enter full name', 'enter your full name'])
+const emailLabels = new Set(['email', 'email address', 'your email', 'enter your email', 'e-mail', 'e-mail address', 'your email address', 'enter your email address'])
+
+export function cleanLabel(label: string): string {
+  return label
+    .replace(/(?:[\s:*·•\-_/]|[([]?\s*required(?:\s+question)?\s*[)\]]?)+$/i, '')
+    .trim()
+}
+
 const normalize = (text: string) => text.toLowerCase().trim().replace(/\s+/g, ' ').replace(/[.!?]+$/, '')
-export function isNameField(label: string) { return labels.has(normalize(label).replace(/\s*(?::|\*|\(required\))+\s*$/, '').trim()) }
+
+export function isNameField(label: string) {
+  return labels.has(normalize(cleanLabel(label)))
+}
+
+export function isEmailField(label: string) {
+  return emailLabels.has(normalize(cleanLabel(label)))
+}
 export function nameDescription(label: string): string {
   if (/\b(first|given)\b/i.test(label)) return 'first name'
   if (/\b(last|surname)\b/i.test(label)) return 'last name'

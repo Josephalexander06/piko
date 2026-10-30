@@ -7,7 +7,7 @@ import type { ScanField } from '../scanner/scanner.types'
 import { voiceSession } from '../voice-output/voice-session'
 import { connectionAction } from '../local-service/connection.service'
 import { ensureMicrophonePermission } from '../voice-input/microphone-permission'
-import { confirmsName, invalidNameValue, isNameField, nameDescription, nonNameAnswer, randomNameRequest, sameNameAnswer } from '../interpretation/name-intent'
+import { cleanLabel, confirmsName, invalidNameValue, isEmailField, isNameField, nameDescription, nonNameAnswer, randomNameRequest, sameNameAnswer } from '../interpretation/name-intent'
 
 type Phase = 'idle' | 'starting' | 'summary' | 'answer' | 'interpreting' | 'confirm' | 'filling' | 'complete' | 'ready' | 'stale' | 'error'
 export interface GuidedState { phase: Phase; workflow: WorkflowState; fieldId: string | null; message: string; summary: string; heard: string; error: string | null; voice: boolean; turn: number; listen: boolean }
@@ -137,7 +137,7 @@ export class GuidedAssistant {
     if (validDraft(field, this.workflow.snapshot().drafts[field.fieldId])) { await this.prepareConfirmation(); return }
     this.set({ phase: 'answer' })
     const options = field.options.filter(option => !option.disabled).map(option => spoken(option.label)).join(', ')
-    const question = isNameField(field.label) ? `${this.fields().indexOf(field) === 0 ? `Let's start with your ${nameDescription(field.label)}. ` : ''}What is your ${nameDescription(field.label)}?` : field.fieldType === 'email' ? 'What is your email address?' : `What should I enter for ${spoken(field.label)}?`
+    const question = isNameField(field.label) ? `${this.fields().indexOf(field) === 0 ? `Let's start with your ${nameDescription(field.label)}. ` : ''}What is your ${nameDescription(field.label)}?` : field.fieldType === 'email' || isEmailField(field.label) ? 'What is your email address?' : `What should I enter for ${spoken(cleanLabel(field.label))}?`
     await this.say(`${question}${options ? options.length <= 350 ? ` Options are ${options}.` : ' Choose from the options shown on the page.' : ''}`)
     if (signal.aborted) return
   }
@@ -179,7 +179,7 @@ export class GuidedAssistant {
     if (workflow.error) { this.set({ phase: 'answer', error: workflowError(workflow.error) }); return }
     if (!field || !validDraft(field, workflow.drafts[field.fieldId])) {
       const clarification = workflow.clarifications.find(item => item.targetFieldIds.includes(field?.fieldId ?? ''))
-      this.set({ phase: 'answer' }); await this.say(clarification ? spoken(clarification.question) : `I need a clearer answer for ${spoken(field?.label ?? 'this field')}. Please try again.`); return
+      this.set({ phase: 'answer' }); await this.say(clarification ? spoken(clarification.question) : `I need a clearer answer for ${spoken(cleanLabel(field?.label ?? 'this field'))}. Please try again.`); return
     }
     await this.prepareConfirmation()
   }
@@ -192,12 +192,12 @@ export class GuidedAssistant {
     if (signal.aborted) return
     if (!this.workflow.snapshot().review) {
       const workflow = this.workflow.snapshot(), reason = workflow.outcome?.results.find(result => result.fieldId === field.fieldId)?.reason
-      const error = reason === 'constraint' ? `This page rejected the answer for ${spoken(field.label)}. Please say it again or type a corrected answer.` : reason === 'existing-value' ? `This field already has a different answer. Clear it on the page, then try again.` : workflowError(workflow.error ?? 'fill-invalid')
+      const error = reason === 'constraint' ? `This page rejected the answer for ${spoken(cleanLabel(field.label))}. Please say it again or type a corrected answer.` : reason === 'existing-value' ? `This field already has a different answer. Clear it on the page, then try again.` : workflowError(workflow.error ?? 'fill-invalid')
       this.set({ phase: 'answer', error }); await this.say(error); return
     }
     this.set({ phase: 'confirm', heard: '', error: null })
     const value = spoken(displayAnswer(field, this.workflow.snapshot()))
-    const message = isNameField(field.label) ? randomNameRequest(this.workflow.snapshot().transcript) ? `I suggest the name ${value}.` : `Your ${nameDescription(field.label)} is ${value}.` : field.fieldType === 'email' ? `Your email address is ${value}.` : `For ${spoken(field.label)}, I have ${value}.`
+    const message = isNameField(field.label) ? randomNameRequest(this.workflow.snapshot().transcript) ? `I suggest the name ${value}.` : `Your ${nameDescription(field.label)} is ${value}.` : field.fieldType === 'email' || isEmailField(field.label) ? `Your email address is ${value}.` : `For ${spoken(cleanLabel(field.label))}, I have ${value}.`
     await this.say(`${message} Shall I continue? Say yes to fill this answer, or no to change it.`)
   }
   async confirm() {
@@ -212,7 +212,7 @@ export class GuidedAssistant {
   async correct(ask = true) {
     const field = this.currentField(); if (!field || ['filling', 'starting'].includes(this.state.phase)) return
     this.renew(); this.workflow.revise(field.fieldId); this.set({ phase: 'answer', heard: '', error: null })
-    if (ask) await this.say(isNameField(field.label) ? `Let's try again. What is your ${nameDescription(field.label)}?` : `What should I enter for ${spoken(field.label)} instead?`)
+    if (ask) await this.say(isNameField(field.label) ? `Let's try again. What is your ${nameDescription(field.label)}?` : `What should I enter for ${spoken(cleanLabel(field.label))} instead?`)
   }
   async manual(text: string) {
     const field = this.currentField(); if (!field || !['answer', 'confirm'].includes(this.state.phase)) return

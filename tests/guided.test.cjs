@@ -33,9 +33,10 @@ test('spoken email punctuation is independently validated without guessing spell
  for(const item of require('./fixtures/spoken-email-cases.json'))assert.equal(supportedText(item.kind,item.value,item.quote),item.expected,JSON.stringify(item));
 });
 test('name sentence prefixes and generation instructions are never accepted as literal names',()=>{
- const{invalidNameValue,isNameField,requestedNameValue}=load(path.join(root,'features/interpretation/name-intent.ts'));
+ const{cleanLabel,invalidNameValue,isEmailField,isNameField,requestedNameValue}=load(path.join(root,'features/interpretation/name-intent.ts'));
  for(const value of ['My name is Dario George','I am Dario George','use a random name','random name'])assert.equal(invalidNameValue(value),true);
- assert.equal(isNameField('Enter Your Name:'),true);assert.equal(invalidNameValue('Dario George'),false);
+ assert.equal(isNameField('Enter Your Name:'),true);assert.equal(isNameField('Name * · Required'),true);assert.equal(isNameField('Name * (required)'),true);assert.equal(invalidNameValue('Dario George'),false);
+ assert.equal(isEmailField('Email * · Required'),true);assert.equal(cleanLabel('Address * · Required'),'Address');
  assert.equal(requestedNameValue('Full name','Morgan Reed','Use a random name.','Use a random name.'),true);
  for(const [label,value,text]of[['Full name','Morgan Reed',"Don't use a random name"],['Email address','Morgan Reed','Use a random name.'],['Full name','random name','Use a random name.']])assert.equal(requestedNameValue(label,value,text,text),false);
 });
