@@ -27,10 +27,10 @@ export function extractDirectAnswer(text: string, field?: { label: string }): st
   if (field) {
     const label = cleanLabel(field.label).toLowerCase()
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const prefixRegex = new RegExp(`^(?:(?:my\\s+)?(?:${escaped}\\s+)?(?:is|would be)|i live at|i live in|i am|i['’]m|it is|it's|enter|please enter|put)\\s+`, 'i')
+    const prefixRegex = new RegExp(`^(?:(?:(?:my|the)\\s+)?(?:${escaped}\\s+)?(?:is|would be)|i live at|i live in|i am|i['’]m|this is|it is|it's|enter|please enter|put)\\s+`, 'i')
     cleaned = cleaned.replace(prefixRegex, '').trim()
   } else {
-    cleaned = cleaned.replace(/^(?:(?:it is|it's|enter|please enter|put)\s+)/i, '').trim()
+    cleaned = cleaned.replace(/^(?:(?:this is|it is|it's|enter|please enter|put)\s+)/i, '').trim()
   }
   cleaned = cleaned.replace(/^(?:please\s+)?(?:use\s+)/i, '').trim()
   return cleaned || text.trim()

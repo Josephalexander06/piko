@@ -16,7 +16,7 @@ PROMPT = (Path(__file__).parents[1] / "prompts/interpretation.txt").read_text()
 
 def extract_name_candidate(transcript: str) -> str | None:
     text = transcript.strip().rstrip(".!?")
-    match = re.match(r"^(?:(?:my (?:full |first |last )?name (?:is|would be))|(?:i am)|(?:i['’]m)|(?:it is)|(?:it's)|(?:enter)|(?:please enter))\s+(.+)$", text, re.IGNORECASE)
+    match = re.match(r"^(?:(?:(?:my|the)\s+)?(?:full |first |last )?name (?:is|would be)|i am|i['’]m|this is|it is|it's|enter|please enter|put)\s+(.+)$", text, re.IGNORECASE)
     candidate = match.group(1).strip() if match else text
     candidate = re.sub(r"^(?:please\s+)?(?:use\s+)?", "", candidate, flags=re.IGNORECASE).strip()
     if (1 <= len(candidate) <= 100
@@ -31,7 +31,7 @@ def extract_name_candidate(transcript: str) -> str | None:
 def extract_text_candidate(transcript: str, label: str = "") -> str | None:
     text = transcript.strip().rstrip(".!?")
     clean_lbl = re.sub(r'(?:[\s:*·•\-_/]|[([]?\s*required(?:\s+question)?\s*[)\]]?)+$', '', label, flags=re.IGNORECASE).strip()
-    prefix = rf"^(?:(?:my\s+)?(?:{re.escape(clean_lbl)}\s+)?(?:is|would be)|i live at|i live in|i am|i['’]m|it is|it's|enter|please enter|put)\s+"
+    prefix = rf"^(?:(?:(?:my|the)\s+)?(?:{re.escape(clean_lbl)}\s+)?(?:is|would be)|i live at|i live in|i am|i['’]m|this is|it is|it's|enter|please enter|put)\s+"
     candidate = re.sub(prefix, "", text, flags=re.IGNORECASE).strip() if clean_lbl else text
     candidate = re.sub(r"^(?:please\s+)?(?:use\s+)?", "", candidate, flags=re.IGNORECASE).strip()
     if (1 <= len(candidate) <= 1000
