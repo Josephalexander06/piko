@@ -14,7 +14,10 @@ ROOT=Path(__file__).resolve().parents[1]
 VENDOR=ROOT/'vendor'
 SERVICE=ROOT/'apps/local-service'
 WHISPER_VERSION='v1.9.5'
-MODEL_SHA256='c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d'
+MODEL_NAME='ggml-large-v3-turbo-q5_0.bin'
+MODEL_SHA256='394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2'
+VAD_NAME='ggml-silero-v6.2.0.bin'
+VAD_SHA256='2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987'
 
 
 def download(url, target, digest):
@@ -58,18 +61,20 @@ def main():
         with tarfile.open(archive) as package:package.extractall(VENDOR/'ffmpeg',filter='data')
         binaries=list((VENDOR/'ffmpeg').glob('*/bin/ffmpeg'))
     ffmpeg=binaries[0]
-    model=SERVICE/'models/ggml-small.en.bin';model.parent.mkdir(exist_ok=True)
-    download('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin',model,MODEL_SHA256)
+    model=SERVICE/'models'/MODEL_NAME;model.parent.mkdir(exist_ok=True)
+    download('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'+MODEL_NAME,model,MODEL_SHA256)
+    vad=SERVICE/'models'/VAD_NAME
+    download('https://huggingface.co/ggml-org/whisper-vad/resolve/main/'+VAD_NAME,vad,VAD_SHA256)
     python=SERVICE/'.venv/bin/python'
     if not python.is_file():raise SystemExit('Create apps/local-service/.venv and install requirements-dev.txt first.')
     voices=SERVICE/'voices'
     if not (voices/'en_US-lessac-medium.onnx').is_file() or not (voices/'en_US-lessac-medium.onnx.json').is_file():
         subprocess.run([str(python),'-m','piper.download_voices','en_US-lessac-medium','--data-dir',str(voices)],env={**os.environ,'ORT_DISABLE_TELEMETRY':'1'},check=True)
-    config={'WHISPER_CPP_CLI':str(cli),'WHISPER_MODEL_PATH':str(model),'FFMPEG_PATH':str(ffmpeg),'FFPROBE_PATH':str(ffmpeg.with_name('ffprobe'))}
+    config={'WHISPER_CPP_CLI':str(cli),'WHISPER_MODEL_PATH':str(model),'WHISPER_VAD_MODEL_PATH':str(vad),'FFMPEG_PATH':str(ffmpeg),'FFPROBE_PATH':str(ffmpeg.with_name('ffprobe'))}
     for key,path in config.items():
         if not Path(path).is_file():raise RuntimeError(f'Missing configured file: {key}')
     (SERVICE/'.voice-config.json').write_text(json.dumps(config,indent=2)+'\n')
-    print('Whisper.cpp, English model, FFmpeg/FFprobe and Piper voice are installed. Restart the local companion.')
+    print('Whisper.cpp, multilingual Turbo model, Silero speech detection, FFmpeg/FFprobe and Piper voice are installed. Restart the local companion.')
 
 
 if __name__=='__main__':main()

@@ -21,9 +21,11 @@ npm run setup:voice
 ```
 
 The voice installer targets Linux x86_64 with Python 3.12+, `git`, `cmake`, and `g++` installed.
-It builds the official Whisper.cpp v1.9.5 CPU runtime, installs the English
-`small.en` model, installs FFmpeg/FFprobe, and downloads the Piper Lessac voice
-only if missing. Whisper model and FFmpeg archive checksums are verified. Runtime files
+It builds the official Whisper.cpp v1.9.5 CPU runtime, installs the multilingual
+`large-v3-turbo-q5_0` model (547 MiB) and Silero speech detection, installs
+FFmpeg/FFprobe, and downloads the Piper Lessac voice only if missing. Model and
+FFmpeg archive checksums are verified. Recognition stays in English and speech
+detection filters quiet portions before decoding. Runtime files
 stay in ignored `vendor/`, `models/`, and `voices/` directories. No downloads run
 when the companion starts. It saves local paths in the ignored
 `apps/local-service/.voice-config.json`.

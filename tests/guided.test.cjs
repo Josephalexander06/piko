@@ -39,3 +39,24 @@ test('name sentence prefixes and generation instructions are never accepted as l
  assert.equal(requestedNameValue('Full name','Morgan Reed','Use a random name.','Use a random name.'),true);
  for(const [label,value,text]of[['Full name','Morgan Reed',"Don't use a random name"],['Email address','Morgan Reed','Use a random name.'],['Full name','random name','Use a random name.']])assert.equal(requestedNameValue(label,value,text,text),false);
 });
+test('full name is requested up front and repeating it preserves the existing confirmation',async()=>{
+ const s=setup();await s.guide.start(true);assert.match(s.guide.snapshot().message,/What is your full name\?/);await s.guide.answer('My name is Alex Thomas.');assert.equal(s.guide.snapshot().phase,'confirm');assert.match(s.guide.snapshot().message,/Your full name is Alex Thomas/);const review=s.workflow.snapshot().review.reviewId;
+ await s.guide.answer('Alex Thomas');await s.guide.answer('My full name is Alex Thomas.');assert.equal(s.calls.requests.length,1);assert.equal(s.calls.reviews.length,1);assert.equal(s.workflow.snapshot().review.reviewId,review);assert.equal(s.calls.fills.length,0);assert.equal(s.guide.snapshot().phase,'confirm');assert.match(s.guide.snapshot().message,/Please say yes/);
+ await s.guide.answer('Yes, my full name is Alex Thomas.');assert.equal(s.calls.fills.length,1);assert.equal(s.guide.snapshot().fieldId,fields[1].fieldId);assert.match(s.guide.snapshot().message,/email address/);s.guide.dispose();
+});
+test('a corrected full name is processed without asking for the name again first',async()=>{
+ const s=setup();await s.guide.start(true);await s.guide.answer('Alex Thomas');const before=s.calls.spoken.length;await s.guide.answer('My full name is Maya Chen.');assert.equal(s.guide.snapshot().phase,'confirm');assert.match(s.guide.snapshot().message,/Your full name is Maya Chen/);assert.equal(s.calls.spoken.slice(before).some(text=>/What is your/.test(text)),false);assert.equal(s.calls.fills.length,0);s.guide.dispose();
+});
+test('name confirmation matches the complete value and never accepts a negated or different name',()=>{
+ const{confirmsName,sameNameAnswer,nameDescription}=load(path.join(root,'features/interpretation/name-intent.ts'));
+ assert.equal(nameDescription('First name'),'first name');assert.equal(nameDescription('Last name'),'last name');assert.equal(nameDescription('Full name'),'full name');assert.equal(sameNameAnswer('My name is Dario George.','Dario George'),true);
+ for(const text of ['Yes, Dario George.','Yes, my full name is Dario George.',"Yes, that's my full name."])assert.equal(confirmsName(text,'Dario George'),true,text);
+ for(const text of ['Dario George','Yes, not Dario George','Yes, Dario','Yes, Dario George but change it','No, Dario George'])assert.equal(confirmsName(text,'Dario George'),false,text);
+});
+test('a thank-you transcription is retried as speech, never proposed or reviewed as a name',async()=>{
+ const s=setup();await s.guide.start(true);await s.guide.answer('Thank you. Thank you very much.');assert.equal(s.guide.snapshot().phase,'answer');assert.match(s.guide.snapshot().message,/couldn't make out your full name/);assert.equal(s.guide.snapshot().listen,true);assert.equal(s.calls.requests.length,0);assert.equal(s.calls.reviews.length,0);assert.equal(s.calls.fills.length,0);
+ await s.guide.answer('My name is Alex Thomas.');assert.equal(s.guide.snapshot().phase,'confirm');const review=s.workflow.snapshot().review.reviewId;await s.guide.answer('Thank you.');assert.equal(s.guide.snapshot().phase,'confirm');assert.equal(s.workflow.snapshot().review.reviewId,review);assert.equal(s.calls.requests.length,1);assert.equal(s.calls.fills.length,0);await s.guide.answer('yes');assert.equal(s.guide.snapshot().fieldId,fields[1].fieldId);s.guide.dispose();
+});
+test('native field rejection is explained aloud and a corrected answer can be reviewed',async()=>{
+ let reject=true;const s=setup({fill:async(request,items)=>reject?{ok:false,error:'invalid',preflight:{ok:false,results:items.map(item=>({fieldId:item.fieldId,status:'invalid',reason:'constraint'}))}}:{ok:true,reviewId:id('review',9),expiresAt:Date.now()+60000,preflight:{ok:true,results:items.map(item=>({fieldId:item.fieldId,status:'not-verified'}))}}});await s.guide.start(true);await s.guide.answer('Alex Thomas');assert.match(s.guide.snapshot().error,/This page rejected the answer/);assert.equal(s.calls.spoken.at(-1),s.guide.snapshot().error);assert.equal(s.guide.snapshot().listen,true);reject=false;await s.guide.answer('My name is Maya Chen.');assert.match(s.guide.snapshot().message,/Maya Chen/);assert.equal(s.guide.snapshot().phase,'confirm');s.guide.dispose();
+});

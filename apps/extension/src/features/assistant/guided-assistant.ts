@@ -7,7 +7,7 @@ import type { ScanField } from '../scanner/scanner.types'
 import { voiceSession } from '../voice-output/voice-session'
 import { connectionAction } from '../local-service/connection.service'
 import { ensureMicrophonePermission } from '../voice-input/microphone-permission'
-import { invalidNameValue, isNameField, randomNameRequest } from '../interpretation/name-intent'
+import { confirmsName, invalidNameValue, isNameField, nameDescription, nonNameAnswer, randomNameRequest, sameNameAnswer } from '../interpretation/name-intent'
 
 type Phase = 'idle' | 'starting' | 'summary' | 'answer' | 'interpreting' | 'confirm' | 'filling' | 'complete' | 'ready' | 'stale' | 'error'
 export interface GuidedState { phase: Phase; workflow: WorkflowState; fieldId: string | null; message: string; summary: string; heard: string; error: string | null; voice: boolean; turn: number; listen: boolean }
@@ -137,21 +137,40 @@ export class GuidedAssistant {
     if (validDraft(field, this.workflow.snapshot().drafts[field.fieldId])) { await this.prepareConfirmation(); return }
     this.set({ phase: 'answer' })
     const options = field.options.filter(option => !option.disabled).map(option => spoken(option.label)).join(', ')
-    const question = isNameField(field.label) ? field.label.toLowerCase().includes('first') || field.label.toLowerCase().includes('given') ? 'What is your first name?' : field.label.toLowerCase().includes('last') || field.label.toLowerCase().includes('surname') ? 'What is your last name?' : `${this.fields().indexOf(field) === 0 ? "Let's start with your name. " : ''}What is your name?` : field.fieldType === 'email' ? 'What is your email address?' : `What should I enter for ${spoken(field.label)}?`
+    const question = isNameField(field.label) ? `${this.fields().indexOf(field) === 0 ? `Let's start with your ${nameDescription(field.label)}. ` : ''}What is your ${nameDescription(field.label)}?` : field.fieldType === 'email' ? 'What is your email address?' : `What should I enter for ${spoken(field.label)}?`
     await this.say(`${question}${options ? options.length <= 350 ? ` Options are ${options}.` : ' Choose from the options shown on the page.' : ''}`)
     if (signal.aborted) return
   }
   typing() { this.renew() }
   async answer(text: string, turn = this.state.turn) {
     if (turn !== this.state.turn || !text.trim() || text.length > 4096 || !['answer', 'confirm'].includes(this.state.phase)) return
+    const current = this.currentField()
+    if (current && isNameField(current.label) && nonNameAnswer(text)) {
+      this.renew()
+      this.set({ heard: text, error: null })
+      if (this.state.phase === 'confirm') await this.say('Please say yes to continue, or no to change your name.')
+      else {
+        this.workflow.revise(current.fieldId)
+        await this.say(`I couldn't make out your ${nameDescription(current.label)}. Please say it again, or type it below.`)
+      }
+      return
+    }
     if (this.state.phase === 'confirm') {
       const intent = confirmationIntent(text)
+      const field = this.currentField(), value = field ? displayAnswer(field, this.workflow.snapshot()) : ''
       this.set({ heard: text })
-      if (intent === 'yes') { await this.confirm(); return }
-      await this.correct()
+      if (intent === 'yes' || field && isNameField(field.label) && confirmsName(text, value)) { await this.confirm(); return }
+      if (field && isNameField(field.label) && sameNameAnswer(text, value)) {
+        this.renew()
+        await this.say(`I have your ${nameDescription(field.label)}. Please say yes to continue, or no to change it.`)
+        return
+      }
+      await this.correct(intent === 'no')
       if (intent === 'no') return
     }
-    const signal = this.renew(); this.set({ phase: 'interpreting', heard: text, error: null })
+    const signal = this.renew()
+    if (this.state.fieldId && this.workflow.snapshot().drafts[this.state.fieldId]) this.workflow.revise(this.state.fieldId)
+    this.set({ phase: 'interpreting', heard: text, error: null })
     await this.say('Let me check that answer.', false)
     if (signal.aborted) return
     this.workflow.transcript(text); await this.workflow.interpret(this.state.fieldId ?? undefined)
@@ -171,10 +190,14 @@ export class GuidedAssistant {
     this.workflow.edit(field.fieldId, { selected: true, overwrite }); this.set({ phase: 'interpreting' })
     await this.workflow.review()
     if (signal.aborted) return
-    if (!this.workflow.snapshot().review) { this.set({ phase: 'answer', error: workflowError(this.workflow.snapshot().error ?? 'fill-invalid') }); return }
+    if (!this.workflow.snapshot().review) {
+      const workflow = this.workflow.snapshot(), reason = workflow.outcome?.results.find(result => result.fieldId === field.fieldId)?.reason
+      const error = reason === 'constraint' ? `This page rejected the answer for ${spoken(field.label)}. Please say it again or type a corrected answer.` : reason === 'existing-value' ? `This field already has a different answer. Clear it on the page, then try again.` : workflowError(workflow.error ?? 'fill-invalid')
+      this.set({ phase: 'answer', error }); await this.say(error); return
+    }
     this.set({ phase: 'confirm', heard: '', error: null })
     const value = spoken(displayAnswer(field, this.workflow.snapshot()))
-    const message = isNameField(field.label) ? randomNameRequest(this.workflow.snapshot().transcript) ? `I suggest the name ${value}.` : `Your ${field.label.toLowerCase().includes('first') ? 'first name' : field.label.toLowerCase().includes('last') || field.label.toLowerCase().includes('surname') ? 'last name' : 'name'} is ${value}.` : field.fieldType === 'email' ? `Your email address is ${value}.` : `For ${spoken(field.label)}, I have ${value}.`
+    const message = isNameField(field.label) ? randomNameRequest(this.workflow.snapshot().transcript) ? `I suggest the name ${value}.` : `Your ${nameDescription(field.label)} is ${value}.` : field.fieldType === 'email' ? `Your email address is ${value}.` : `For ${spoken(field.label)}, I have ${value}.`
     await this.say(`${message} Shall I continue? Say yes to fill this answer, or no to change it.`)
   }
   async confirm() {
@@ -186,10 +209,10 @@ export class GuidedAssistant {
     if (workflow.error || !workflow.verified.includes(this.state.fieldId!)) { this.set({ phase: 'answer', error: workflowError(workflow.error ?? 'fill-unavailable') }); return }
     await this.next()
   }
-  async correct() {
+  async correct(ask = true) {
     const field = this.currentField(); if (!field || ['filling', 'starting'].includes(this.state.phase)) return
     this.renew(); this.workflow.revise(field.fieldId); this.set({ phase: 'answer', heard: '', error: null })
-    await this.say(isNameField(field.label) ? "Let's try again. What is your name?" : `What should I enter for ${spoken(field.label)} instead?`)
+    if (ask) await this.say(isNameField(field.label) ? `Let's try again. What is your ${nameDescription(field.label)}?` : `What should I enter for ${spoken(field.label)} instead?`)
   }
   async manual(text: string) {
     const field = this.currentField(); if (!field || !['answer', 'confirm'].includes(this.state.phase)) return

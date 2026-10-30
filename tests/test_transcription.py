@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 import wave
+from dataclasses import replace
 from array import array
 from pathlib import Path
 
@@ -84,6 +85,16 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         result = await self.pipeline.transcribe(wav_bytes(silent=True))
         self.assertEqual(result.status, "no-speech"); self.assertEqual(result.text, "")
         self.assertEqual(len(self.calls), 2); self.assert_clean()
+
+    async def test_configured_vad_preserves_short_spoken_answers(self):
+        self.pipeline.config = replace(self.config, vad_model=Path('silero.bin'))
+        await self.pipeline.transcribe(wav_bytes())
+        args = self.calls[-1][0]
+        self.assertIn('--vad', args)
+        self.assertEqual(args[args.index('-vm') + 1], 'silero.bin')
+        self.assertEqual(args[args.index('-vspd') + 1], '100')
+        self.assertEqual(args[args.index('-vp') + 1], '150')
+        self.assert_clean()
 
     async def test_empty_and_unsupported_media(self):
         for audio, code in [(b"", "empty-audio"), (b"PRIVATE not media", "unsupported-audio"), (b"x" * (MAX_AUDIO_BYTES + 1), "audio-too-large")]:
@@ -243,6 +254,13 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(os.environ.get("PIKO_TEST_REAL_VOICE") == "1", "set PIKO_TEST_REAL_VOICE=1 to test the installed CPU model")
 class RealVoiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_installed_vad_rejects_non_speech_tone(self):
+        config = VoiceConfig.load()
+        self.assertIsNotNone(config.vad_model)
+        result = await Transcriber(config).transcribe(wav_bytes(seconds=3))
+        self.assertEqual(result.status, 'no-speech')
+        self.assertEqual(result.text, '')
+
     async def test_actual_ffmpeg_whisper_and_cleanup(self):
         config = VoiceConfig.load()
         self.assertTrue(config.configured)

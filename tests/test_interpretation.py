@@ -92,6 +92,19 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
                 await InterpretationService(FakeModel(json.dumps(raw))).interpret(InterpretRequest.model_validate(case['request']))
             self.assertEqual(error.exception.code, 'unsupported-evidence')
 
+    async def test_polite_filler_is_not_a_name_even_when_quoted_exactly(self):
+        for text in ['Thank you.', 'Thank you. Thank you very much.', 'Thanks for watching.']:
+            case = copy.deepcopy(CASES[0])
+            case['request']['fields'] = case['request']['fields'][:1]
+            case['request']['fields'][0]['label'] = 'Name *'
+            case['request']['transcript'] = text
+            raw = proposal(case)
+            raw['updates'] = raw['updates'][:1]
+            raw['updates'][0]['target']['value'] = text
+            with self.assertRaises(InterpretationError) as error:
+                await InterpretationService(FakeModel(json.dumps(raw))).interpret(InterpretRequest.model_validate(case['request']))
+            self.assertEqual(error.exception.code, 'unsupported-evidence')
+
     async def test_invalid_outputs_are_rejected_without_repair(self):
         request = InterpretRequest.model_validate(CASES[0]['request'])
         good = proposal(CASES[0])

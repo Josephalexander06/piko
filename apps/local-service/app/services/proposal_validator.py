@@ -26,8 +26,11 @@ def random_name_request(text: str) -> bool:
 
 
 def invalid_name_value(text: str) -> bool:
+    words = re.sub(r'[^a-z\s]', ' ', normalized(text))
+    words = ' '.join(words.split())
+    non_name = re.fullmatch(r'(?:(?:thank you(?: very much| for watching)?|thanks(?: a lot| for watching)?)(?:\s+|$))+', words)
     return (bool(re.match(r"^(?:my (?:full |first |last )?name (?:is|would be)|i am|i['’]m)\b", normalized(text)))
-            or random_name_request(text) or normalized(text).rstrip('.!?') in {'random name', 'a random name', 'full name'})
+            or bool(non_name) or random_name_request(text) or normalized(text).rstrip('.!?') in {'random name', 'a random name', 'full name'})
 
 
 def requested_name_value(label: str, value: str, transcript: str, quote: str) -> bool:
