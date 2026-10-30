@@ -42,9 +42,9 @@ async function start(){
   });
   const modelURL=await listen(model);
   service=spawn(python,[path.join(root,'tests/fixtures/speech-companion.py')],{cwd:path.join(root,'apps/local-service'),stdio:['ignore','pipe','pipe'],env:{...process.env,PIKO_TEST_REAL_PIPER:'0',OLLAMA_BASE_URL:modelURL,OLLAMA_MODEL:'qwen3.5:2b',PYTHONUNBUFFERED:'1'}});
-  const code=await new Promise((resolve,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Companion startup timed out')),10000);service.once('error',()=>{clearTimeout(timer);reject(Error('Companion failed'));});service.stderr.on('data',()=>{});service.stdout.on('data',chunk=>{output=(output+chunk).slice(-2048);const match=/Piko pairing code[^\n]*: ([a-f0-9]{16})/.exec(output);if(match){clearTimeout(timer);output='';resolve(match[1]);}});});
+  await new Promise((resolve,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Companion startup timed out')),10000);service.once('error',()=>{clearTimeout(timer);reject(Error('Companion failed'));});service.stderr.on('data',()=>{});service.stdout.on('data',chunk=>{output=(output+chunk).slice(-2048);const match=/Piko companion service running|Piko pairing code/.exec(output);if(match){clearTimeout(timer);output='';resolve();}});});
   await expect.poll(async()=>{try{return(await fetch('http://127.0.0.1:8765/v1/health')).status;}catch{return 0;}}).toBe(200);
-  await launch();await panel.getByText('Local service connection',{exact:true}).click();await panel.getByLabel('Temporary pairing code').fill(code);await panel.getByRole('button',{name:'Pair extension',exact:true}).click();await expect(panel.getByText('Companion paired',{exact:true})).toBeVisible();await inspect();
+  await launch();await panel.getByText('Local service connection',{exact:true}).click();await panel.getByRole('button',{name:/Connect to companion|Pair extension/}).click();await expect(panel.getByText(/Companion (paired|connected)/)).toBeVisible();await inspect();
 }
 async function launch(){
   context=await chromium.launchPersistentContext(profile,{channel:'chromium',headless:true,executablePath:process.env.PIKO_CHROMIUM_PATH||undefined,args:['--enable-unsafe-extension-debugging'],ignoreDefaultArgs:['--disable-extensions']});

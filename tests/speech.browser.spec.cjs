@@ -22,7 +22,7 @@ async function start({real=false}={}){
     service.once('error',()=>{clearTimeout(timer);reject(Error('Companion launch failed'));});
     service.once('exit',()=>{clearTimeout(timer);reject(Error('Companion exited before startup'));});
     service.stderr.on('data',()=>{});
-    service.stdout.on('data',chunk=>{buffer=(buffer+chunk).slice(-2048);const match=/Piko pairing code[^\n]*: ([a-f0-9]{16})/.exec(buffer);if(match){clearTimeout(timer);buffer='';resolve(match[1]);}});
+    service.stdout.on('data',chunk=>{buffer=(buffer+chunk).slice(-2048);const match=/Piko companion service running|Piko pairing code/.exec(buffer);if(match){clearTimeout(timer);buffer='';resolve('ready');}});
   });
   await expect.poll(async()=>{try{return(await fetch('http://127.0.0.1:8765/v1/health')).status;}catch{return 0;}}).toBe(200);
   context=await chromium.launchPersistentContext('',{channel:'chromium',headless:true,executablePath:process.env.PIKO_CHROMIUM_PATH||undefined,args:['--enable-unsafe-extension-debugging','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream'],ignoreDefaultArgs:['--disable-extensions']});
@@ -41,8 +41,8 @@ async function start({real=false}={}){
     for(const [object,name]of[[window,'fetch'],[XMLHttpRequest.prototype,'open'],[Storage.prototype,'setItem'],[indexedDB,'open']])object[name]=()=>{window.__forbidden.push(name);throw Error('Panel bypassed worker or persisted data');};
   });
   await panel.goto(`chrome-extension://${new URL(worker.url()).hostname}/src/sidepanel/index.html`);
-  await panel.getByText('Local service connection',{exact:true}).click();await panel.getByLabel('Temporary pairing code').fill(code);await panel.getByRole('button',{name:'Pair extension',exact:true}).click();
-  await expect(panel.getByText('Companion paired',{exact:true})).toBeVisible();
+  await panel.getByText('Local service connection',{exact:true}).click();await panel.getByRole('button',{name:/Connect to companion|Pair extension/}).click();
+  await expect(panel.getByText(/Companion (paired|connected)/)).toBeVisible();
   await expect(panel.getByRole('list',{name:'Local service capabilities'})).toContainText('Speech synthesis: ready');
 }
 const speech=()=>panel.getByRole('region',{name:'Spoken responses',exact:true});

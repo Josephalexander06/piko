@@ -38,7 +38,7 @@ async function start(real=false) {
     let output='';const timer=setTimeout(()=>reject(Error('Companion startup timed out')),10000);
     service.once('error',()=>{clearTimeout(timer);reject(Error('Companion failed to start'));});
     service.stderr.on('data',()=>{});
-    service.stdout.on('data',chunk=>{output=(output+chunk).slice(-2048);const match=/Piko pairing code[^\n]*: ([a-f0-9]{16})/.exec(output);if(match){clearTimeout(timer);output='';resolve(match[1]);}});
+    service.stdout.on('data',chunk=>{output=(output+chunk).slice(-2048);const match=/Piko companion service running|Piko pairing code/.exec(output);if(match){clearTimeout(timer);output='';resolve('ready');}});
   });
   await expect.poll(async()=>{try{return(await fetch(`${base}/v1/health`)).status;}catch{return 0;}}).toBe(200);
   context=await chromium.launchPersistentContext('',{channel:'chromium',headless:true,executablePath:process.env.PIKO_CHROMIUM_PATH||undefined,args:['--enable-unsafe-extension-debugging'],ignoreDefaultArgs:['--disable-extensions']});
@@ -55,8 +55,8 @@ async function start(real=false) {
   });
   await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html`);
   await panel.getByText('Local service connection',{exact:true}).click();
-  await panel.getByLabel('Temporary pairing code').fill(code);await panel.getByRole('button',{name:'Pair extension',exact:true}).click();
-  await expect(panel.getByText('Companion paired',{exact:true})).toBeVisible();
+  await panel.getByRole('button',{name:/Connect to companion|Pair extension/}).click();
+  await expect(panel.getByText(/Companion (paired|connected)/)).toBeVisible();
   await page.bringToFront();
   const {targetInfos}=await cdp.send('Target.getTargets',{filter:[{}]});
   const native=targetInfos.find(t=>t.type==='tab'&&t.url===page.url());

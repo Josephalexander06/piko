@@ -43,7 +43,7 @@ npm run build
 - `src/background/service-worker.ts` - Toolbar behavior, active-tab checks, injection, and lifecycle coordination
 - `src/background/approval-coordinator.ts` - Exact reviewed batches, expiry, sender validation, and one-use grants
 - `src/features/filling/` - Manual proposals, runtime validation, review, approval, and per-field results
-- `src/features/local-service/` - Pairing UI, typed connection messages, capabilities, and runtime status
+- `src/features/local-service/` - Connection UI, typed connection messages, capabilities, and runtime status
 - `src/background/connection-manager.ts` - Fixed loopback API client and temporary session credentials
 - `src/content/fill-engine.ts` - Live preflight, native setters/events, and delayed verification
 - `src/components/ui/` - shadcn/ui primitives (nine components)
@@ -61,8 +61,8 @@ npm run build
 - The CRXJS plugin automatically handles manifest generation
 - Step 6 adds manual permission-gated filling to explicit inspection. The
   synthetic demo remains separate. See [the filling guide](../../docs/07-permission-gated-filling.md).
-- Step 7 adds authenticated companion communication; see [the connection guide](../../docs/08-local-service-connection.md).
-- Voice input, Qwen interpretation, and Piper output use the authenticated local companion.
+- Step 7 adds companion communication; see [the connection guide](../../docs/08-local-service-connection.md).
+- Voice input, Qwen interpretation, and Piper output use the local companion.
 - Production permissions are `sidePanel`, `activeTab`, `scripting`, `storage`,
   and only the loopback service host. No automatic content-script registrations.
 - Run `npm run typecheck` and `npm run lint` before building.
@@ -79,16 +79,16 @@ npm run build
 
 ## Step 9 interpretation
 
-After pairing and scanning, use **Prepare answers with local Qwen** to edit a
+After connecting and scanning, use **Prepare answers with local Qwen** to edit a
 transcript or type an answer. **Interpret edited answer** sends it through the
-worker to the authenticated companion, which alone calls local Ollama. Validated
+worker to the companion, which alone calls local Ollama. Validated
 proposals appear in the existing review controls, with inclusion/overwrite
 unselected. See [the Qwen guide](../../docs/10-local-qwen-interpretation.md)
 for setup, measured model accuracy, limitations and verification.
 
 ## Step 10 speech output
 
-**Spoken responses** defaults off. After configuring and pairing a companion with
+**Spoken responses** defaults off. After configuring and connecting a companion with
 Piper ready, enable speech to hear the visible question. **Play aloud** provides
 manual replay and the autoplay fallback; **Stop speech and record** coordinates
 with Whisper capture. Speech is optional and makes no form changes. See the

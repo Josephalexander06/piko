@@ -226,9 +226,10 @@ export class ConnectionManager {
       // the token and rejects disagreement with any browser-supplied Origin.
       const headers: Record<string, string> = { 'X-Piko-Extension-Origin': chrome.runtime.getURL('').replace(/\/$/, '') }
       if (token) headers.Authorization = `Bearer ${token}`
-      if (code !== undefined) headers['Content-Type'] = 'application/json'
+      if (path === '/pair' || code !== undefined) headers['Content-Type'] = 'application/json'
+      const requestBody = path === '/pair' ? JSON.stringify({ protocol_version: 1, ...(code !== undefined ? { code } : {}) }) : undefined
       const response = await this.http(`${SERVICE_ORIGIN}/v1${path}`, {
-        method, headers, ...(code === undefined ? {} : { body: JSON.stringify({ protocol_version: 1, code }) }),
+        method, headers, ...(requestBody ? { body: requestBody } : {}),
         signal: controller.signal, credentials: 'omit', cache: 'no-store', redirect: 'error', mode: 'cors',
       })
       if (response.status === 401) failed(path === '/pair' ? 'pairing-rejected' : 'session-expired')

@@ -97,10 +97,10 @@ python3 -m venv .venv
 # .\.venv\Scripts\python.exe -m app
 ```
 
-The service binds to **`127.0.0.1:8765`** and prints a **16-character one-time pairing code** to your terminal:
+The service binds to **`127.0.0.1:8765`**:
 
 ```text
-[Pairing] One-time startup code: a1b2c3d4e5f6g7h8 (expires in 5 minutes)
+Piko companion service running on http://127.0.0.1:8765
 INFO:     Uvicorn running on http://127.0.0.1:8765 (Press CTRL+C to quit)
 ```
 
@@ -116,12 +116,11 @@ INFO:     Uvicorn running on http://127.0.0.1:8765 (Press CTRL+C to quit)
 
 ---
 
-### Step 4: Pair Extension with Companion Service
+### Step 4: Connect Extension with Companion Service
 
 1. In the Piko side panel, expand the **Local service connection** section.
-2. Click **Check service** to verify the service is reachable.
-3. Enter the 16-character code printed in your Python terminal, then click **Pair extension**.
-4. Both **Service connected** and **Session active** will turn green.
+2. Click **Connect to companion** (direct connection, no pairing code required).
+3. The companion connects directly and enables voice, interpretation, and synthesis.
 
 ---
 
@@ -265,8 +264,8 @@ npm run test:browser
 ## ❓ Troubleshooting & FAQs
 
 <details>
-<summary><b>Pairing code expired or invalid</b></summary>
-Pairing codes expire after 5 minutes and can only be used once. Restart the local service (<code>Ctrl+C</code> and run <code>.venv/bin/python -m app</code>) to generate a new 16-character code.
+<summary><b>Companion service connection issues</b></summary>
+Ensure the local service is running (<code>.venv/bin/python -m app</code> in <code>apps/local-service</code>). You can check health or click <b>Connect to companion</b> directly in the extension side panel.
 </details>
 
 <details>

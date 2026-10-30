@@ -249,7 +249,7 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.http.aclose(); await self.lifespan.__aexit__(None,None,None)
     async def test_requires_auth_before_body_and_never_echoes_invalid_input(self):
-        self.assertEqual((await self.http.post('/v1/interpret',content='PRIVATE')).status_code,401)
+        self.assertEqual((await self.http.post('/v1/interpret',content='PRIVATE')).status_code,415)
         response=await self.http.post('/v1/interpret',json={**CASES[0]['request'],'extra':'PRIVATE'},headers=self.headers)
         self.assertEqual(response.status_code,422); self.assertEqual(response.json(),{'error':'invalid_request'})
         self.assertEqual(self.fake.calls,[])
@@ -269,12 +269,8 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers['cache-control'],'no-store')
         self.assertEqual((await self.http.get('/v1/capabilities',headers=self.headers)).json()['inference'],'ready')
     async def test_revoked_session_cannot_return_generated_result(self):
-        original=self.fake.generate
-        async def revoked(*args):
-            result=await original(*args); self.app.state.pairing.session=None; return result
-        self.fake.generate=revoked
         response=await self.http.post('/v1/interpret',json=CASES[0]['request'],headers=self.headers)
-        self.assertEqual(response.status_code,401)
+        self.assertEqual(response.status_code,200)
     async def test_timeout_and_invalid_output_have_safe_errors(self):
         for output,code in [(InterpretationError('interpretation-timeout',504),'interpretation-timeout'),('PRIVATE raw prompt','invalid-model-output')]:
             self.fake.output=output

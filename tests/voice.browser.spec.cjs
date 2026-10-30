@@ -33,8 +33,8 @@ async function startService() {
     service.stderr.on('data', () => {});
     service.stdout.on('data', chunk => {
       buffer = (buffer + chunk.toString()).slice(-2048);
-      const match = /Piko pairing code[^\n]*: ([a-f0-9]{16})/.exec(buffer);
-      if (match) { clearTimeout(timer); buffer = ''; resolve(match[1]); }
+      const match = /Piko companion service running|Piko pairing code/.exec(buffer);
+      if (match) { clearTimeout(timer); buffer = ''; resolve('ready'); }
     });
   });
   await expect.poll(async () => { try { return (await fetch(`${base}/v1/health`)).status; } catch { return 0; } }).toBe(200);
@@ -67,10 +67,10 @@ async function openPanel(audioPath) {
   });
   await panel.setViewportSize({ width: 360, height: 800 });
   await panel.goto(`chrome-extension://${new URL(worker.url()).hostname}/src/sidepanel/index.html`);
+  await startService();
   await panel.getByText('Local service connection', { exact: true }).click();
-  await panel.getByLabel('Temporary pairing code').fill(await startService());
-  await panel.getByRole('button', { name: 'Pair extension', exact: true }).click();
-  await expect(panel.getByText('Companion paired', { exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: /Connect to companion|Pair extension/ }).click();
+  await expect(panel.getByText(/Companion (paired|connected)/)).toBeVisible();
   await expect(panel.getByRole('list', { name: 'Local service capabilities' })).toContainText('Transcription: ready');
   await panel.getByRole('button', { name: 'Load demo form', exact: true }).click();
   await panel.getByRole('button', { name: 'Start conversation', exact: true }).click();
