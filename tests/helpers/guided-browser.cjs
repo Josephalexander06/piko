@@ -73,7 +73,15 @@ class BrowserHarness{
    }
    if(this.page&&!this.page.isClosed())expect(await this.page.evaluate(()=>window.submits)).toBe(0);
    expect(this.errors).toEqual([]);
-   if(this.worker)expect(await this.worker.evaluate(async()=>Object.keys(await chrome.storage.local.get(null)))).toEqual([]);
+   if(this.worker){
+    const stored=await this.worker.evaluate(async()=>chrome.storage.local.get(null));
+    if(this.options.expectedFacts){
+     expect(Object.keys(stored)).toEqual(['piko.assistant.persistent_facts.v1']);
+     const facts=stored['piko.assistant.persistent_facts.v1'];
+     expect(facts.map(({key,value})=>({key,value}))).toEqual(this.options.expectedFacts);
+     for(const fact of facts)expect(Object.keys(fact).sort()).toEqual(['confirmedAt','factId','key','source','value']);
+    }else expect(stored).toEqual({});
+   }
    expect(this.requests.every(r=>r.worker&&r.url.startsWith(`${serviceBase}/v1/`)||r.url===this.base+'/')).toBe(true);
   }finally{
    await this.context?.close();

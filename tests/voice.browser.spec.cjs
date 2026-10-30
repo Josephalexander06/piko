@@ -3,7 +3,7 @@ test('denied microphone capture offers text fallback and does not upload audio',
 test('ending a recording stops microphone tracks without accepting or uploading a late answer',async()=>{h=new BrowserHarness();await h.open();await h.start(true);await expect(h.panel.getByText(/Listening…/)).toBeVisible();await h.panel.getByRole('button',{name:'End session'}).click();await expect.poll(()=>h.panel.evaluate(()=>window.__streams.every(s=>s.getTracks().every(t=>t.readyState==='ended')))).toBe(true);expect(h.requests.filter(r=>r.url.endsWith('/v1/transcribe'))).toHaveLength(0);});
 test('automatic spoken turns carry name, email and confirmation context through the local worker',async()=>{
  test.setTimeout(60000);
- h=new BrowserHarness();await h.open({transcripts:['My full name is Alex Thomas.','My email is alex@example.test.','Yes.'],answerKinds:['name','email','confirmation']});await h.start(true);
+ h=new BrowserHarness();await h.open({transcripts:['My full name is Alex Thomas.','My email is alex@example.test.','Yes.'],answerKinds:['name','email','confirmation'],expectedFacts:[{key:'full_name',value:'Alex Thomas'},{key:'email',value:'alex@example.test'}]});await h.start(true);
  await expect(h.panel.getByRole('region',{name:'Final form review'})).toBeVisible({timeout:40000});
  await expect(h.page.locator('#name')).toHaveValue('Alex Thomas');
  await expect(h.page.locator('#email')).toHaveValue('alex@example.test');

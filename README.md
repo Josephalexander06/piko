@@ -113,8 +113,15 @@ PIKO_TEST_REAL_VOICE=1 PIKO_TEST_REAL_PIPER=1 npm run test:python
 npm run test:browser
 ```
 
-Browser fixtures require port 8765 to be free. The optional real-engine browser
-case can instead use an already running, configured companion:
+Browser fixtures use port 8765 by default. If the companion is already running,
+test the voice fixtures on another free port with a temporary extension copy:
+
+```bash
+PIKO_TEST_SERVICE_PORT=18765 npm run test:browser -- tests/voice.browser.spec.cjs
+```
+
+The optional real-engine browser case can instead use an already running,
+configured companion:
 
 ```bash
 PIKO_TEST_REAL_VOICE=1 PIKO_TEST_USE_RUNNING_SERVICE=1 npm run test:browser -- tests/voice.browser.spec.cjs --grep 'installed Whisper'
