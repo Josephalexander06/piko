@@ -118,8 +118,11 @@ test('expired stored facts invalidate approval and are removed before interpreta
 });
 test('facts survive worker suspension but old field registries do not; browser restart clears session storage',async()=>{
   await start();await panel.getByLabel('Proposed value for Full name · text').fill('Alex Thomas');await select('Full name');await review();await approve(true);const old=await stored();
-  const cdp=await context.browser().newBrowserCDPSession();await cdp.send('ServiceWorker.enable');await cdp.send('ServiceWorker.stopAllWorkers');
-  const nextWorker=context.waitForEvent('serviceworker');const snapshot=await panel.evaluate(async()=>chrome.runtime.sendMessage({type:'PIKO_SESSION_STATUS',requestId:`request_${crypto.randomUUID().replace(/-/g,'')}`}));worker=await nextWorker;expect(snapshot.session.sessionId).toBe(old.sessionId);expect(snapshot.session.facts).toHaveLength(1);
+  await panel.getByLabel('Proposed value for Email address · email').fill('alex@example.test');await select('Email address');await review();
+  const cdp=await context.newCDPSession(panel),versions=new Map(),workerURL=worker.url();cdp.on('ServiceWorker.workerVersionUpdated',event=>{for(const version of event.versions)versions.set(version.scriptURL,version);});await cdp.send('ServiceWorker.enable');
+  await expect.poll(()=>versions.get(workerURL)?.runningStatus).toBe('running');await cdp.send('ServiceWorker.stopWorker',{versionId:versions.get(workerURL).versionId});await expect.poll(()=>versions.get(workerURL)?.runningStatus).toBe('stopped');
+  const snapshot=await panel.evaluate(async()=>chrome.runtime.sendMessage({type:'PIKO_SESSION_STATUS',requestId:`request_${crypto.randomUUID().replace(/-/g,'')}`}));await expect.poll(()=>versions.get(workerURL)?.runningStatus).toBe('running');worker=context.serviceWorkers().find(candidate=>candidate.url()===workerURL)||worker;expect(snapshot.session.sessionId).toBe(old.sessionId);expect(snapshot.session.facts).toHaveLength(1);
+  await panel.getByRole('checkbox',{name:'I approve this exact batch and destination.',exact:true}).check();await page.bringToFront();await panel.getByRole('button',{name:'Approve and fill selected fields',exact:true}).evaluate(button=>button.click());await expect(panel.getByRole('alert')).toContainText('expired or was already used');await expect(page.locator('#email')).toHaveValue('');
   await inspect();await expect(panel.getByLabel('Proposed value for Full name · text')).toHaveValue('Alex Thomas');
   await context.close();context=undefined;panel=undefined;page=undefined;worker=undefined;await launch();expect(await stored()).toBeUndefined();await expect(panel.getByLabel('Edited answer for this form')).toHaveCount(0);
 });

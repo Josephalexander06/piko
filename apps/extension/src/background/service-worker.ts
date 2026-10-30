@@ -191,6 +191,7 @@ async function sessionRequest(message: SessionRequest): Promise<SessionReply> {
     if (sessions.get(message.tabId) !== live || !isRecord(proof) || proof.current !== true) return { ok: false, requestId: message.requestId, error: 'stale-scan' }
     const previous = await facts.status()
     const session = await facts.ensure(live.inventory.origin)
+    if (sessions.get(message.tabId) !== live) return { ok: false, requestId: message.requestId, error: 'stale-scan' }
     if (previous && previous.sessionId !== session.sessionId) {
       for (const tabId of [...sessions.keys()]) if (tabId !== message.tabId) invalidate(tabId, 'changed')
       void chrome.runtime.sendMessage({ type: 'PIKO_SESSION_CLEARED', sessionId: previous.sessionId }).catch(() => {})

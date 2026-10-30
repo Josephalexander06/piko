@@ -129,6 +129,11 @@ INFO:     Uvicorn running on http://127.0.0.1:8765 (Press CTRL+C to quit)
 
 To experience the full scanner, review, and filling cycle, follow these practical steps:
 
+Step 11 now supports multiple answer turns, deterministic missing-field questions,
+protected manual edits, and separately approved temporary session facts. See the
+[conversation workflow guide](docs/12-conversation-workflow.md) for the current
+controls, expiry policy, and automated/manual verification commands.
+
 ### 1. Start the Included Test Fixture Server
 
 Piko includes a comprehensive test form (`tests/fixtures/form-fixture.html`) containing text inputs, date pickers, dropdowns, radios, checkboxes, and sensitive inputs.
@@ -157,7 +162,7 @@ In Chrome, open: **`http://127.0.0.1:8787/form-fixture.html`**
 You can test proposals via **Manual Preparation** or **AI Natural Language**:
 
 #### Option A: Manual Entry (Zero AI setup required)
-1. In the side panel, click **Prepare manual answers**.
+1. In the side panel, find **Prepare manual answers** below the question controls.
 2. Fill in synthetic values for eligible fields (e.g. Full Name, Email, Organization).
 3. Click **Review selected values**.
 
@@ -180,8 +185,8 @@ Before any data touches the webpage:
 1. Proposed values are displayed in the review card with **all checkboxes initially unchecked**.
 2. Select the specific fields you want to fill.
 3. If a field on the page already has content, confirm the overwrite prompt.
-4. Click **Approve and fill batch**.
-5. **Outcome:** Piko fills the approved fields on the live page and triggers native input/change events, displaying verified status for each field.
+4. Click **Review selected values**, check **I approve this exact batch and destination.**, then click **Approve and fill selected fields**. The separate **Remember selected answers for this session** option is optional.
+5. **Outcome:** Piko fills the approved fields on the live page and triggers native input/change events, displaying verified status for each field. Submit the form manually. Use **Clear session** to remove temporary facts and the live conversation.
 
 ---
 

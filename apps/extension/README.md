@@ -35,10 +35,10 @@ npm run build
 ## Project Structure
 
 - `src/sidepanel/` - CRXJS HTML entry, React bootstrap, and bundled styles
-- `src/App.tsx` - Assistant container and seven-stage workflow
-- `src/features/assistant/` - Typed reducer, actions, and synthetic fixtures
+- `src/App.tsx` - Live assistant container and separate synthetic demo
+- `src/features/assistant/` - Conversation reducer, orchestrator, question queue, guards, temporary facts, and demo fixtures
 - `src/components/layout/` - Header, shell, and workflow progress
-- `src/components/assistant/` - Runtime status, conversation, and disabled microphone
+- `src/components/assistant/` - Runtime status, conversation, and local microphone controls
 - `src/components/review/` - Editable proposals and simulated approval summary
 - `src/background/service-worker.ts` - Toolbar behavior, active-tab checks, injection, and lifecycle coordination
 - `src/background/approval-coordinator.ts` - Exact reviewed batches, expiry, sender validation, and one-use grants
@@ -62,11 +62,11 @@ npm run build
 - Step 6 adds manual permission-gated filling to explicit inspection. The
   synthetic demo remains separate. See [the filling guide](../../docs/07-permission-gated-filling.md).
 - Step 7 adds authenticated companion communication; see [the connection guide](../../docs/08-local-service-connection.md).
-- No microphone capture, model integration, or form-data service requests are added.
+- Voice input, Qwen interpretation, and Piper output use the authenticated local companion.
 - Production permissions are `sidePanel`, `activeTab`, `scripting`, `storage`,
   and only the loopback service host. No automatic content-script registrations.
 - Run `npm run typecheck` and `npm run lint` before building.
-- Production ZIP output: `release/crx-piko-extension-0.3.0.zip`.
+- Production ZIP output: `release/crx-piko-extension-0.4.0.zip`.
 - See [the root setup guide](../../docs/04-development-setup.md) for full setup
   and manual toolbar verification.
 - See [the UI guide](../../docs/05-extension-ui.md) for the demo workflow and tests.
@@ -94,3 +94,17 @@ manual replay and the autoplay fallback; **Stop speech and record** coordinates
 with Whisper capture. Speech is optional and makes no form changes. See the
 [Step 10 guide](../../docs/11-local-piper-speech.md) for setup, privacy controls,
 voice licensing, measured verification and manual hardware checks.
+
+## Step 11 conversation workflow
+
+Inspection starts the live conversation. Answer the deterministic questions over
+multiple turns, edit the current text before interpretation, skip missing answers,
+and select proposals for exact batch review. Manual edits stay protected from
+later model replies. Filling and submission remain separate user actions.
+
+At approval, **Remember selected answers for this session** is an independent
+opt-in. Only successfully verified, eligible answers are reusable on the same
+origin, with an absolute 30-minute expiry. **Clear session** removes them and
+the live conversation; **Clear scan** keeps confirmed facts. Reopening a panel
+requires a fresh scan. See [the workflow guide](../../docs/12-conversation-workflow.md)
+for the architecture, test commands, and manual verification.
