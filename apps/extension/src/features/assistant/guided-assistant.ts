@@ -7,7 +7,7 @@ import type { ScanField } from '../scanner/scanner.types'
 import { voiceSession } from '../voice-output/voice-session'
 import { connectionAction } from '../local-service/connection.service'
 import { ensureMicrophonePermission } from '../voice-input/microphone-permission'
-import { cleanLabel, confirmsName, invalidNameValue, isEmailField, isNameField, nameDescription, nonNameAnswer, randomNameRequest, sameNameAnswer } from '../interpretation/name-intent'
+import { cleanLabel, confirmsName, extractDirectAnswer, invalidNameValue, isEmailField, isNameField, nameDescription, nonNameAnswer, randomNameRequest, sameNameAnswer } from '../interpretation/name-intent'
 
 type Phase = 'idle' | 'starting' | 'summary' | 'answer' | 'interpreting' | 'confirm' | 'filling' | 'complete' | 'ready' | 'stale' | 'error'
 export interface GuidedState { phase: Phase; workflow: WorkflowState; fieldId: string | null; message: string; summary: string; heard: string; error: string | null; voice: boolean; turn: number; listen: boolean }
@@ -177,7 +177,11 @@ export class GuidedAssistant {
     if (signal.aborted) return
     const field = this.currentField(), workflow = this.workflow.snapshot()
     if (workflow.error) { this.set({ phase: 'answer', error: workflowError(workflow.error) }); return }
-    if (!field || !validDraft(field, workflow.drafts[field.fieldId])) {
+    if (field && !validDraft(field, workflow.drafts[field.fieldId])) {
+      const direct = extractDirectAnswer(text, field)
+      this.workflow.edit(field.fieldId, { text: direct })
+    }
+    if (!field || !validDraft(field, this.workflow.snapshot().drafts[field.fieldId])) {
       const clarification = workflow.clarifications.find(item => item.targetFieldIds.includes(field?.fieldId ?? ''))
       this.set({ phase: 'answer' }); await this.say(clarification ? spoken(clarification.question) : `I need a clearer answer for ${spoken(cleanLabel(field?.label ?? 'this field'))}. Please try again.`); return
     }

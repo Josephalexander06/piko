@@ -28,6 +28,18 @@ def extract_name_candidate(transcript: str) -> str | None:
     return None
 
 
+def extract_text_candidate(transcript: str, label: str = "") -> str | None:
+    text = transcript.strip().rstrip(".!?")
+    clean_lbl = re.sub(r'(?:[\s:*·•\-_/]|[([]?\s*required(?:\s+question)?\s*[)\]]?)+$', '', label, flags=re.IGNORECASE).strip()
+    prefix = rf"^(?:(?:my\s+)?(?:{re.escape(clean_lbl)}\s+)?(?:is|would be)|i live at|i live in|i am|i['’]m|it is|it's|enter|please enter|put)\s+"
+    candidate = re.sub(prefix, "", text, flags=re.IGNORECASE).strip() if clean_lbl else text
+    candidate = re.sub(r"^(?:please\s+)?(?:use\s+)?", "", candidate, flags=re.IGNORECASE).strip()
+    if (1 <= len(candidate) <= 1000
+            and not re.search(r"\b(maybe|might|uncertain|not sure|could be|either|possibly|guess|cancel|stop|skip|help)\b", candidate.lower())):
+        return candidate
+    return text if 1 <= len(text) <= 1000 else None
+
+
 def output_schema(request: InterpretRequest) -> dict:
     schema = ModelProposal.model_json_schema()
     variants = []
@@ -64,12 +76,13 @@ def output_schema(request: InterpretRequest) -> dict:
             schema['properties']['updates']['items']['anyOf'][0]['properties']['target']['properties']['value']['enum'] = candidates
             schema['properties']['updates']['minItems'] = 1
             schema['properties']['clarifications']['maxItems'] = 0
-    if len(request.fields) == 1 and request.fields[0].type == 'text' and is_name_field(request.fields[0].label):
-        if random_name_request(request.transcript):
+    if len(request.fields) == 1 and request.fields[0].type in ('text', 'textarea') and not request.knownFacts:
+        field = request.fields[0]
+        if is_name_field(field.label) and random_name_request(request.transcript):
             schema['properties']['updates']['minItems'] = 1
             schema['properties']['clarifications']['maxItems'] = 0
         elif not re.search(r"\b(maybe|might|uncertain|not|never|could|either|possibly|guess)\b|don't|isn't", request.transcript.lower()):
-            candidate = extract_name_candidate(request.transcript)
+            candidate = extract_name_candidate(request.transcript) if is_name_field(field.label) else extract_text_candidate(request.transcript, field.label)
             if candidate:
                 schema['properties']['updates']['items']['anyOf'][0]['properties']['target']['properties']['value']['enum'] = [candidate]
                 schema['properties']['updates']['minItems'] = 1

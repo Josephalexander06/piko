@@ -18,7 +18,7 @@ NAME_LABELS = {'name', 'full name', 'first name', 'last name', 'given name', 'su
 
 
 def is_name_field(label: str) -> bool:
-    return re.sub(r'\s*(?::|\*|\(required\))+\s*$', '', normalized(label)).strip() in NAME_LABELS
+    return re.sub(r'(?:[\s:*·•\-_/]|[([]?\s*required(?:\s+question)?\s*[)\]]?)+$', '', normalized(label)).strip() in NAME_LABELS
 
 
 def random_name_request(text: str) -> bool:

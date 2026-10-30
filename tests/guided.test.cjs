@@ -49,8 +49,9 @@ test('a corrected full name is processed without asking for the name again first
  const s=setup();await s.guide.start(true);await s.guide.answer('Alex Thomas');const before=s.calls.spoken.length;await s.guide.answer('My full name is Maya Chen.');assert.equal(s.guide.snapshot().phase,'confirm');assert.match(s.guide.snapshot().message,/Your full name is Maya Chen/);assert.equal(s.calls.spoken.slice(before).some(text=>/What is your/.test(text)),false);assert.equal(s.calls.fills.length,0);s.guide.dispose();
 });
 test('name confirmation matches the complete value and never accepts a negated or different name',()=>{
- const{confirmsName,sameNameAnswer,nameDescription}=load(path.join(root,'features/interpretation/name-intent.ts'));
- assert.equal(nameDescription('First name'),'first name');assert.equal(nameDescription('Last name'),'last name');assert.equal(nameDescription('Full name'),'full name');assert.equal(sameNameAnswer('My name is Dario George.','Dario George'),true);
+ const{confirmsName,sameNameAnswer,nameDescription,extractDirectAnswer}=load(path.join(root,'features/interpretation/name-intent.ts'));
+ assert.equal(nameDescription('First name'),'first name');assert.equal(nameDescription('Last name'),'last name');assert.equal(nameDescription('Full name'),'full name');assert.equal(nameDescription('Name'),'name');assert.equal(nameDescription('Name * · Required'),'name');assert.equal(sameNameAnswer('My name is Dario George.','Dario George'),true);
+ assert.equal(extractDirectAnswer('Texas',{label:'Address'}),'Texas');assert.equal(extractDirectAnswer('My address is Texas',{label:'Address'}),'Texas');
  for(const text of ['Yes, Dario George.','Yes, my full name is Dario George.',"Yes, that's my full name."])assert.equal(confirmsName(text,'Dario George'),true,text);
  for(const text of ['Dario George','Yes, not Dario George','Yes, Dario','Yes, Dario George but change it','No, Dario George'])assert.equal(confirmsName(text,'Dario George'),false,text);
 });
@@ -60,4 +61,12 @@ test('a thank-you transcription is retried as speech, never proposed or reviewed
 });
 test('native field rejection is explained aloud and a corrected answer can be reviewed',async()=>{
  let reject=true;const s=setup({fill:async(request,items)=>reject?{ok:false,error:'invalid',preflight:{ok:false,results:items.map(item=>({fieldId:item.fieldId,status:'invalid',reason:'constraint'}))}}:{ok:true,reviewId:id('review',9),expiresAt:Date.now()+60000,preflight:{ok:true,results:items.map(item=>({fieldId:item.fieldId,status:'not-verified'}))}}});await s.guide.start(true);await s.guide.answer('Alex Thomas');assert.match(s.guide.snapshot().error,/This page rejected the answer/);assert.equal(s.calls.spoken.at(-1),s.guide.snapshot().error);assert.equal(s.guide.snapshot().listen,true);reject=false;await s.guide.answer('My name is Maya Chen.');assert.match(s.guide.snapshot().message,/Maya Chen/);assert.equal(s.guide.snapshot().phase,'confirm');s.guide.dispose();
+});
+test('single-word answer for a field is populated directly without clarification',async()=>{
+ const s=setup({interpret:async request=>({scanId:request.scanId,updates:[],clarifications:[{question:'Please provide your full address',targetFieldIds:[fields[0].fieldId]}],missingFields:[{fieldId:fields[0].fieldId,question:'What is your address?'}]})});
+ await s.guide.start(false);
+ await s.guide.answer('Texas');
+ assert.equal(s.guide.snapshot().phase,'confirm');
+ assert.match(s.guide.snapshot().message,/Texas/);
+ s.guide.dispose();
 });

@@ -19,7 +19,21 @@ export function isEmailField(label: string) {
 export function nameDescription(label: string): string {
   if (/\b(first|given)\b/i.test(label)) return 'first name'
   if (/\b(last|surname)\b/i.test(label)) return 'last name'
-  return 'full name'
+  if (/\bfull\b/i.test(label)) return 'full name'
+  return 'name'
+}
+export function extractDirectAnswer(text: string, field?: { label: string }): string {
+  let cleaned = text.trim().replace(/[.!?]+$/, '').trim()
+  if (field) {
+    const label = cleanLabel(field.label).toLowerCase()
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const prefixRegex = new RegExp(`^(?:(?:my\\s+)?(?:${escaped}\\s+)?(?:is|would be)|i live at|i live in|i am|i['’]m|it is|it's|enter|please enter|put)\\s+`, 'i')
+    cleaned = cleaned.replace(prefixRegex, '').trim()
+  } else {
+    cleaned = cleaned.replace(/^(?:(?:it is|it's|enter|please enter|put)\s+)/i, '').trim()
+  }
+  cleaned = cleaned.replace(/^(?:please\s+)?(?:use\s+)/i, '').trim()
+  return cleaned || text.trim()
 }
 export function sameNameAnswer(text: string, value: string): boolean {
   const answer = normalize(text).replace(/^(?:(?:my )?(?:full |first |last )?name is|i am|i['’]m)\s+/, '')

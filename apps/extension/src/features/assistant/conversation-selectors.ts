@@ -17,10 +17,10 @@ function validDate(text: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(text) && !text.startsWith('0000') && Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === text
 }
 export function validDraft(field: ScanField, draft?: WorkflowDraft): boolean {
-  if (!draft || !draft.text.trim() || draft.text.length > 1024) return false
+  if (!draft || !draft.text.trim()) return false
   if (field.fieldType === 'checkbox') return ['true', 'false'].includes(draft.text) && (!field.required || draft.text === 'true')
   if (['select', 'radio'].includes(field.fieldType)) return field.options.some(option => option.optionId === draft.text && !option.disabled)
-  if (field.constraints.minLength !== undefined && draft.text.length < field.constraints.minLength || field.constraints.maxLength !== undefined && draft.text.length > field.constraints.maxLength) return false
+  if (['text', 'textarea'].includes(field.fieldType)) return true
   if (field.fieldType === 'email' && !/^[^\s@]+@[^\s@]+$/.test(draft.text)) return false
   if (field.fieldType === 'number') {
     if (!validNumber(draft.text)) return false
